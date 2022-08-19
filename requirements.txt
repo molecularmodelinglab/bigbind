@@ -11,3 +11,5 @@ hydra-core
 biopython
 biopandas
 scipy
+meeko
+vina
