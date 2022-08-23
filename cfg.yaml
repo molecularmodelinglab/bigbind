@@ -1,3 +1,10 @@
 bigbind_folder: "/home/boris/Data/BigBind"
 docked_folder: "/home/boris/Data/BigBindDocked"
+crossdocked_folder: "/home/boris/Data/CrossDocked/"
 adfr_folder: "/home/boris/Install/ADFRsuite_x86_64Linux_1.0"
+chembl_file: "/home/boris/Data/ChemBL/chembl_30/chembl_30_sqlite/chembl_30.db"
+sifts_file: "/home/boris/Data/SIFTS/pdb_chain_uniprot.csv"
+
+cache_folder: "/home/boris/Data/BigBindCache"
+cache: true
+recalc: null
