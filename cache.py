@@ -3,14 +3,17 @@ import os
 import yaml
 
 def cache(f):
-    def cached_f(cfg, **kwargs):
+    def cached_f(cfg, *args, **kwargs):
         if cfg["cache"] and cfg["recalc"] != f.__name__:
             cache_file = f"{cfg['cache_folder']}/{f.__name__}.pkl"
             try:
                 with open(cache_file, "rb") as fh:
-                    return pickle.load(fh)
+                    ret = pickle.load(fh)
+                    print(f"Using cached data from {f.__name__}")
+                    return ret
             except:
-                ret = f(cfg, **kwargs)
+                print(f"Running {f.name}")
+                ret = f(cfg, *args, **kwargs)
                 with open(cache_file, "wb") as fh:
                     pickle.dump(ret, fh)
                 return ret
