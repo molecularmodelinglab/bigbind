@@ -4,18 +4,37 @@ import yaml
 
 def cache(f):
     def cached_f(cfg, *args, **kwargs):
-        if cfg["cache"] and cfg["recalc"] != f.__name__:
+        if cfg["cache"]:
             cache_file = f"{cfg['cache_folder']}/{f.__name__}.pkl"
-            try:
-                with open(cache_file, "rb") as fh:
-                    ret = pickle.load(fh)
-                    print(f"Using cached data from {f.__name__}")
-                    return ret
-            except:
-                print(f"Running {f.name}")
-                ret = f(cfg, *args, **kwargs)
-                with open(cache_file, "wb") as fh:
-                    pickle.dump(ret, fh)
+            if f.__name__ not in cfg["recalc"]:
+                try:
+                    with open(cache_file, "rb") as fh:
+                        ret = pickle.load(fh)
+                        print(f"Using cached data from {f.__name__}")
+                        return ret
+                except:
+                    pass
+            print(f"Running {f.__name__}")
+            ret = f(cfg, *args, **kwargs)
+            with open(cache_file, "wb") as fh:
+                pickle.dump(ret, fh)
+                return ret
+    return cached_f
+
+def item_cache(f):
+    def cached_f(cfg, name, *args, **kwargs):
+        if cfg["cache"]:
+            cache_file = f"{cfg['cache_folder']}/{f.__name__}_{name}.pkl"
+            if f.__name__ not in cfg["recalc"]:
+                try:
+                    with open(cache_file, "rb") as fh:
+                        ret = pickle.load(fh)
+                        return ret
+                except:
+                    pass
+            ret = f(cfg, name, *args, **kwargs)
+            with open(cache_file, "wb") as fh:
+                pickle.dump(ret, fh)
                 return ret
     return cached_f
         

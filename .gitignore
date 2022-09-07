@@ -7,3 +7,4 @@
 *.out
 *.err
 cfg.yaml
+logs

@@ -56,13 +56,15 @@ biopython_parser = PDBParser()
 
 def get_lig_url(lig_file):
     pdb_id = lig_file.split("/")[-1].split("_")[0]
-    struct = biopython_parser.get_structure('random_id', lig_file)
-    rec = struct[0]
-    chain = next(iter(rec))
-    asym_id = chain.id
-    res = next(iter(chain))
-    seq_id = res.id[1]
-    return f"https://models.rcsb.org/v1/{pdb_id}/ligand?auth_seq_id={seq_id}&auth_asym_id={asym_id}&encoding=sdf&filename=lig.sdf"
+    with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=PDBConstructionWarning)
+            struct = biopython_parser.get_structure('random_id', lig_file)
+            rec = struct[0]
+            chain = next(iter(rec))
+            asym_id = chain.id
+            res = next(iter(chain))
+            seq_id = res.id[1]
+            return f"https://models.rcsb.org/v1/{pdb_id}/ligand?auth_seq_id={seq_id}&auth_asym_id={asym_id}&encoding=sdf&filename=lig.sdf"
 
 def get_lig(lig_file):
     untrans_file = f"{lig_file}_untrans.sdf"

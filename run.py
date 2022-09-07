@@ -3,13 +3,18 @@ import sqlite3
 import os
 import pickle
 import shutil
+import requests
+from traceback import print_exc
 import yaml
+import io
 from tqdm import tqdm
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from collections import defaultdict
 
-from cache import cache
+from bigbind import get_lig_url
+from cache import cache, item_cache
 
 def get_chembl_con(cfg):
     con = sqlite3.connect(cfg["chembl_file"])
@@ -31,25 +36,31 @@ def load_sifts_into_chembl(cfg, con):
     sifts_df.to_sql('sifts', con, if_exists='replace', index=False)
 
 @cache
-def load_crossdocked_prefixes(cfg):
+def load_crossdocked_files(cfg):
+    """ Get the pdb files associated with the crystal rec and lig files.
+    (the crossdocked types file only lists gninatypes files). Returns a
+    dict mapping rec files to a list of lig files that bind to the rec """
     crossdocked_types = cfg["crossdocked_folder"] + "/types/it2_tt_v1.1_completeset_train0.types"
-
-    all_rec_prefixes = set()
-    all_lig_prefixes = set()
+    
+    ret = defaultdict(set)
     num_chunks = 225838
     for i, chunk in tqdm(enumerate(pd.read_csv(crossdocked_types, sep=' ', names=["label", "binding_affinity", "crystal_rmsd", "rec_file", "lig_file", "vina_score"], chunksize=100)), total=num_chunks):
-        lig_prefix = chunk["lig_file"].apply(lambda lf: "_".join(lf.split("_")[:-4]))
-        rec_prefix = chunk["rec_file"].apply(lambda lf: "_".join(lf.split("_")[:-1]))
-        for rec_prefix, lig_prefix in zip(rec_prefix, lig_prefix):
-            all_rec_prefixes.add(rec_prefix)
-            all_lig_prefixes.add(lig_prefix)
+        folder = chunk["rec_file"].apply(lambda rf: rf.split("/")[0])
+        lig_prefix = chunk["lig_file"].apply(lambda lf: lf.split("_lig_")[0].split("_rec_")[1])
+        lig_file = folder + lig_prefix.apply(lambda pre: "/" + pre + "_lig.pdb")
+        lig_file = lig_file.apply(lambda lf: cfg["crossdocked_folder"] + "/" + lf)
+        rec_file = chunk["rec_file"].apply(lambda lf: cfg["crossdocked_folder"] + "/" + "_".join(lf.split("_")[:-1]) + ".pdb")
+        for rec_file, lig_file in zip(rec_file, lig_file):
+            assert rec_file.endswith("_rec.pdb")
+            assert lig_file.endswith("_lig.pdb")
+            ret[rec_file].add(lig_file)
 
-    return all_rec_prefixes, all_lig_prefixes
+    return ret
 
 @cache
-def get_crossdocked_uniprots(cfg, con, rec_prefixes):
-    cd_pdbs = { f.split('/')[-1].split('_')[0] for f in rec_prefixes }
-    cd_chains = { f.split('/')[-1].split('_')[1] for f in rec_prefixes }
+def get_crossdocked_uniprots(cfg, con, cd_files):
+    cd_pdbs = { f.split('/')[-1].split('_')[0] for f in cd_files.keys() }
+    cd_chains = { f.split('/')[-1].split('_')[1] for f in cd_files.keys() }
     cd_chains_str = ", ".join(map(lambda s: f"'{s}'", cd_chains))
     cd_pdbs_str = ", ".join(map(lambda s: f"'{s}'", cd_pdbs))
 
@@ -57,8 +68,19 @@ def get_crossdocked_uniprots(cfg, con, rec_prefixes):
 
     return crossdocked_uniprots
 
+"""
+extra stuff we yeeted from the og query so we can filter later:
+AND act.potential_duplicate = 0
+AND a.confidence_score >= 8
+AND act.data_validity_comment IS NULL
+"""
+
 @cache
 def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
+    """ Get all activities (with some filtering for quality) of small
+    molecules binding to proteins whose structures are in the crossdocked
+    dataset """
+    
     cd_uniprots_str = ", ".join(map(lambda s: f"'{s}'", cd_uniprots["SP_PRIMARY"]))
     
     query =   f"""
@@ -70,6 +92,8 @@ def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
     act.standard_value,
     act.standard_units,
     act.pchembl_value,
+    act.potential_duplicate,
+    COALESCE(act.data_validity_comment, 'valid') as data_validity_comment,
     a.confidence_score,
     td.chembl_id AS target_chembl_id,
     td.target_type,
@@ -84,9 +108,6 @@ def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
     JOIN target_components tc ON td.tid = tc.tid
     JOIN component_sequences c ON tc.component_id = c.component_id
     AND tt.parent_type  = 'PROTEIN' 
-    AND act.potential_duplicate = 0
-    AND a.confidence_score >= 8
-    AND act.data_validity_comment IS NULL
     AND act.pchembl_value IS NOT NULL
     AND c.accession in ({cd_uniprots_str});
     
@@ -105,15 +126,196 @@ def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
 
     return pd.read_csv(filename)
 
+@cache
+def save_activities_unfiltered(cfg, activities_unfiltered):
+    activities_unfiltered.to_csv(cfg["bigbind_folder"] + "/activities_unfiltered.csv", index=False)
+
+@cache
+def filter_activities(cfg, activities_unfiltered):
+    # remove mixtures
+    activities = activities_unfiltered[~activities_unfiltered["canonical_smiles"].str.contains("\.")].reset_index(drop=True)
+
+    # remove anything chembl thinks could be sketchy
+    activities = activities.query("potential_duplicate == 0 and data_validity_comment == 'valid' and confidence_score >= 8 and standard_relation == '='")
+
+    # we don't have these values for everything after deduping so just drop em
+    activities = activities.drop(columns=["compound_chembl_id", "potential_duplicate", "data_validity_comment", "confidence_score", "target_chembl_id", "target_type", "assay_id"])
+
+    # now we filter duplicates. For now, just use the median for all duplicated measurements
+    dup_indexes = activities.duplicated(keep=False, subset=['canonical_smiles', 'protein_accession'])
+    dup_df = activities[dup_indexes]
+
+    dup_rows = defaultdict(list)
+    for i, row in tqdm(dup_df.iterrows(), total=len(dup_df)):
+        dup_rows[(row['canonical_smiles'], row['protein_accession'])].append(row)
+
+    activities = activities[~dup_indexes].reset_index(drop=True)
+
+    new_data = {
+        "canonical_smiles": [],
+        "standard_type": [],
+        "standard_relation": [],
+        "standard_value": [],
+        "standard_units": [],
+        "pchembl_value": [],
+        "protein_accession": []
+    }
+    
+    for (smiles, uniprot), rows in tqdm(dup_rows.items()):
+        st_types = { r.standard_type for r in rows }
+        if len(st_types) == 1:
+            st_type = next(iter(st_types))
+        else:
+            st_type = "mixed"
+        pchembl_values = [ r.pchembl_value for r in rows ]
+        final_pchembl = np.median(pchembl_values)
+        final_nM = 10**(9-final_pchembl)
+        new_data["canonical_smiles"].append(smiles)
+        new_data["standard_type"].append(st_type)
+        new_data["standard_relation"].append("=")
+        new_data["standard_value"].append(final_nM)
+        new_data["standard_units"].append('nM')
+        new_data["pchembl_value"].append(final_pchembl)
+        new_data["protein_accession"].append(uniprot)
+
+    new_data_df = pd.DataFrame(new_data)
+    activities = pd.concat([activities, new_data_df])
+
+    return activities
+
+@cache
+def get_chain_to_uniprot(cfg, con):
+    """ Map PDB ids and chains to uniprot ids """
+    sifts_df = pd.read_sql_query("SELECT * FROM SIFTS", con)
+    chain2uniprot = {}
+    for i, row in tqdm(sifts_df.iterrows(), total=len(sifts_df)):
+        chain2uniprot[(row["PDB"], row["CHAIN"])] = row["SP_PRIMARY"]
+    return chain2uniprot
+
+@cache
+def get_uniprot_dicts(cfg, cd_files, chain2uniprot):
+    """ Get a bunch of dictionaries mapping uniprot id to and from
+    rec file, lig file, and pocketome pocket """
+    uniprot2recs = defaultdict(set)
+    uniprot2ligs = defaultdict(set)
+    uniprot2pockets = defaultdict(set)
+    pocket2recs = defaultdict(set)
+    pocket2ligs = defaultdict(set)
+    for rec_file, lig_files in tqdm(cd_files.items(), total=len(cd_files)):
+        *rest, folder, file = rec_file.split("/")
+        pocket = folder
+        rec_id, rec_chain, *rest = file.split("_")
+        key = (rec_id, rec_chain)
+        for lig_file in lig_files:
+            if key in chain2uniprot:
+                uniprot = chain2uniprot[key]
+                uniprot2recs[uniprot].add(rec_file)
+                uniprot2ligs[uniprot].add(lig_file)
+                uniprot2pockets[uniprot].add(pocket)
+
+            pocket2recs[pocket].add(rec_file)
+            pocket2ligs[pocket].add(lig_file)
+
+    return uniprot2recs,\
+        uniprot2ligs,\
+        uniprot2pockets,\
+        pocket2recs,\
+        pocket2ligs
+
+@item_cache
+def download_lig_sdf(cfg, name, lig):
+    url = get_lig_url(lig)
+    res = requests.get(url)
+    return res.text
+
+@cache
+def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
+    """ Returns a mapping from lig file to text associated with
+    its downloaded SDF file """
+    ret = {}
+    tot_ligs = 0
+    lf_errors = []
+    for uniprot in tqdm(uniprot2ligs):
+        ligs = uniprot2ligs[uniprot]
+        for lig in ligs:
+            tot_ligs += 1
+            try:
+                ret[lig] = download_lig_sdf(cfg, lig.replace("/", "_"), lig)
+                # out_file = f"{lig}_untrans.sdf"
+                # if c.calculate:
+                #     url = get_lig_url(lig)
+                #     res = requests.get(url)
+                #     c.save(res.text)
+                # with open(out_file, "w") as f:
+                #     f.write(res.text)
+            except KeyboardInterrupt:
+                raise
+            except:
+                print(f"Error in {lig}")
+                if rigorous:
+                    raise
+                else:
+                    lf_errors.append(lig)
+                    print_exc()
+    print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
+    return ret
+
+@item_cache
+def get_lig(cfg, name, lig_file, sdf_text):
+    """ Returns the RDKit mol object. The conformation is specified
+    in the pdb lig_file and the connectivity is specified in sdf_text """
+    lig = next(Chem.ForwardSDMolSupplier(io.BytesIO(sdf_text.encode('utf-8'))))
+    lig_pdb = Chem.MolFromPDBFile(lig_file)
+
+    assert lig_pdb is not None
+    assert lig is not None
+    assert '.' not in Chem.MolToSmiles(lig)
+    
+    return lig
+
+def get_all_ligs(cfg, lig_sdfs, rigorous=False):
+    """ Returns a dict mapping ligand files to ligand mol objects """
+    lf_errors = []
+    ret = {}
+    for lf, sdf in lig_sdfs.items():
+        try:
+            ret[lf] = get_lig(cfg, lf.replace("/", "_"), lf, sdf)
+        except KeyboardInterrupt:
+            raise
+        except:
+            print(f"Error in {lf}")
+            if rigorous:
+                raise
+            else:
+                print_exc()
+                lf_errors.append(lf)
+    print(f"Successfully obtained {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/len(lig_sdfs))*100}%)")
+    return ret
+
 def run(cfg):
+    os.makedirs(cfg["bigbind_folder"], exist_ok=True)
     if cfg["cache"]:
         os.makedirs(cfg["cache_folder"], exist_ok=True)
+        
     con = get_chembl_con(cfg)
     load_sifts_into_chembl(cfg, con)
-    rec_prefixes, lig_prefixes = load_crossdocked_prefixes(cfg)
-    cd_uniprots = get_crossdocked_uniprots(cfg, con, rec_prefixes)
-    initial_activities = get_crossdocked_chembl_activities(cfg, con, cd_uniprots)
-    print(initial_activities)
+    cd_files = load_crossdocked_files(cfg)
+    cd_uniprots = get_crossdocked_uniprots(cfg, con, cd_files)
+    activities_unfiltered = get_crossdocked_chembl_activities(cfg, con, cd_uniprots)
+    save_activities_unfiltered(cfg, activities_unfiltered)
+    activities_filtered = filter_activities(cfg, activities_unfiltered)
+    
+    chain2uniprot = get_chain_to_uniprot(cfg, con)
+    
+    uniprot2recs,\
+    uniprot2ligs,\
+    uniprot2pockets,\
+    pocket2recs,\
+    pocket2ligs = get_uniprot_dicts(cfg, cd_files, chain2uniprot)
+    
+    lig_sdfs = download_all_lig_sdfs(cfg, uniprot2ligs)
+    # ligs = get_all_ligs(cfg, lig_sdfs)
+    # print(ligs)
     
 if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:
