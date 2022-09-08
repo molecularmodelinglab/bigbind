@@ -7,6 +7,7 @@ import requests
 from traceback import print_exc
 import yaml
 import io
+from joblib import Parallel, delayed
 from tqdm import tqdm
 import numpy as np
 from rdkit import Chem
@@ -15,6 +16,29 @@ from collections import defaultdict
 
 from bigbind import get_lig_url
 from cache import cache, item_cache
+
+import signal
+
+class timeout:
+    def __init__(self, seconds, error_message='Timeout'):
+        self.seconds = seconds
+        self.error_message = error_message
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
+
+class ProgressParallel(Parallel):
+    def __call__(self, total, *args, **kwargs):
+        with tqdm(total=total) as self._pbar:
+            return Parallel.__call__(self, *args, **kwargs)
+
+    def print_progress(self):
+        self._pbar.n = self.n_completed_tasks
+        self._pbar.refresh()
 
 def get_chembl_con(cfg):
     con = sqlite3.connect(cfg["chembl_file"])
@@ -183,6 +207,74 @@ def filter_activities(cfg, activities_unfiltered):
 
     return activities
 
+def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False):
+
+    periodic_table = Chem.GetPeriodicTable()
+    # ZINC yeets any molecule containing other elements, so shall we
+    allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
+    
+    folder = cfg["bigbind_folder"] + "/chembl_structures"
+    os.makedirs(folder, exist_ok=True)
+    filename = folder + "/" + name + ".sdf"
+    if cfg["cache"] and "save_mol_sdf" not in cfg["recalc"]:
+        if os.path.exists(filename):
+            return True
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+
+    for atom in mol.GetAtoms():
+        num = atom.GetAtomicNum()
+        sym = Chem.PeriodicTable.GetElementSymbol(periodic_table, num)
+        if sym not in allowed_atoms and verbose:
+            print(f"Rejecting {smiles} because it contains {sym}.")
+            return False
+
+    try:
+        with timeout(20):
+            # try to come up with a 3d structure
+            for i in range(num_embed_tries):
+                conf_id = AllChem.EmbedMolecule(mol)
+                if conf_id == 0:
+                    break
+            else:
+                return False
+    except TimeoutError:
+        return False
+
+    writer = Chem.SDWriter(filename)
+    writer.write(mol)
+
+    return True
+        
+@cache
+def save_all_mol_sdfs(cfg, activities):
+    unique_smiles = activities.canonical_smiles.unique()
+    smiles2name = {}
+    for i, smiles in enumerate(unique_smiles):
+        smiles2name[smiles] = f"mol_{i}"
+
+    smiles2filename = {}
+    results = ProgressParallel(n_jobs=8)(len(smiles2name), (delayed(save_mol_sdf)(cfg, name, smiles) for smiles, name in smiles2name.items()))
+    for result, (smiles, name) in zip(results, smiles2name.items()):
+        if result:
+            filename = f"chembl_structures/{name}.sdf"
+            smiles2filename[smiles] = filename
+
+    return smiles2filename
+
+@cache
+def add_sdfs_to_activities(cfg, activities, smiles2filename):
+    filename_col = []
+    for smiles in activities.canonical_smiles:
+        if smiles in smiles2filename:
+            filename_col.append(smiles2filename[smiles])
+        else:
+            filename_col.append("error")
+
+    activities["structure_file"] = filename_col
+    
+    activities = activities.query("structure_file != 'error'").reset_index(drop=True)
+    return activities
+        
 @cache
 def get_chain_to_uniprot(cfg, con):
     """ Map PDB ids and chains to uniprot ids """
@@ -304,6 +396,9 @@ def run(cfg):
     activities_unfiltered = get_crossdocked_chembl_activities(cfg, con, cd_uniprots)
     save_activities_unfiltered(cfg, activities_unfiltered)
     activities_filtered = filter_activities(cfg, activities_unfiltered)
+    smiles2filename= save_all_mol_sdfs(cfg, activities_filtered)
+    activities_filtered = add_sdfs_to_activities(cfg, activities_filtered, smiles2filename)
+    
     
     chain2uniprot = get_chain_to_uniprot(cfg, con)
     
