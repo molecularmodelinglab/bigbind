@@ -8,3 +8,6 @@
 *.err
 cfg.yaml
 logs
+
+*.pdb
+*.json
