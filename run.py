@@ -1,3 +1,4 @@
+import random
 import pandas as pd
 import sqlite3
 import os
@@ -11,10 +12,18 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
+from rdkit import RDLogger
 from rdkit.Chem import AllChem
 from collections import defaultdict
+from copy import deepcopy
 
-from bigbind import get_lig_url
+from Bio.PDB import PDBParser, PDBIO, Select
+from Bio.PDB.PDBExceptions import PDBConstructionWarning
+
+RDLogger.DisableLog('rdApp.*')
+
+from bigbind import get_lig_url, save_pockets
 from cache import cache, item_cache
 
 import signal
@@ -308,9 +317,16 @@ def get_uniprot_dicts(cfg, cd_files, chain2uniprot):
             pocket2recs[pocket].add(rec_file)
             pocket2ligs[pocket].add(lig_file)
 
+    
+    pocket2uniprots = defaultdict(set)
+    for uniprot, pockets in uniprot2pockets.items():
+        for pocket in pockets:
+            pocket2uniprots[pocket].add(uniprot)
+
     return uniprot2recs,\
         uniprot2ligs,\
         uniprot2pockets,\
+        pocket2uniprots,\
         pocket2recs,\
         pocket2ligs
 
@@ -353,36 +369,222 @@ def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
     return ret
 
 @item_cache
-def get_lig(cfg, name, lig_file, sdf_text):
+def get_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
     """ Returns the RDKit mol object. The conformation is specified
     in the pdb lig_file and the connectivity is specified in sdf_text """
     lig = next(Chem.ForwardSDMolSupplier(io.BytesIO(sdf_text.encode('utf-8'))))
+    lig_untrans = deepcopy(lig)
     lig_pdb = Chem.MolFromPDBFile(lig_file)
 
     assert lig_pdb is not None
     assert lig is not None
     assert '.' not in Chem.MolToSmiles(lig)
+    assert lig.GetNumAtoms() == lig_pdb.GetNumAtoms()
+    
+    conf = lig_pdb.GetConformer(0)
+    lig.RemoveConformer(0)
+    lig.AddConformer(conf)
+
+    # sometimes the coordinates are in a different order?
+    # for now just throw these out
+    assert AllChem.AlignMol(lig_untrans, lig) < align_cutoff
     
     return lig
 
-def get_all_ligs(cfg, lig_sdfs, rigorous=False):
+@cache
+def get_all_ligs(cfg, lig_sdfs, rigorous=False, verbose=False):
     """ Returns a dict mapping ligand files to ligand mol objects """
     lf_errors = []
     ret = {}
-    for lf, sdf in lig_sdfs.items():
+    for lf, sdf in tqdm(lig_sdfs.items()):
         try:
             ret[lf] = get_lig(cfg, lf.replace("/", "_"), lf, sdf)
         except KeyboardInterrupt:
             raise
         except:
-            print(f"Error in {lf}")
+            if verbose:
+                print(f"Error in {lf}")
             if rigorous:
                 raise
             else:
-                print_exc()
+                if verbose:
+                    print_exc()
                 lf_errors.append(lf)
     print(f"Successfully obtained {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/len(lig_sdfs))*100}%)")
     return ret
+
+@cache
+def filter_uniprots(cfg, uniprot2pockets, pocket2uniprots):
+    filtered_uniprots = { uniprot for uniprot, pockets in uniprot2pockets.items() if len(pockets) == 1 }
+    filtered_pockets = { pocket for pocket, uniprots in pocket2uniprots.items() if len(filtered_uniprots.intersection(uniprots)) }
+    print(f"Found {len(filtered_uniprots)} proteins with only 1 pocket out of {len(uniprot2pockets)} (Success rate {100*len(filtered_uniprots)/len(uniprot2pockets)}%)")
+    print(f"Found {len(filtered_pockets)} pockets with valid proteins out of {len(pocket2uniprots)} (Success rate {100*len(filtered_pockets)/len(pocket2uniprots)}%)")
+    return filtered_uniprots, filtered_pockets
+    
+@cache
+def save_all_structures(cfg,
+                        final_pockets,
+                        pocket2uniprots,
+                        pocket2recs,
+                        pocket2ligs,
+                        ligfile2lig):
+    """ Saves the pdb receptor and sdf ligand files. Returns new
+    dicts that use _those_ filename instead of crossdocked's """
+
+    my_pocket2recs = defaultdict(set)
+    my_pocket2ligs = defaultdict(set)
+    my_ligfile2lig = {}
+    
+    for pocket in tqdm(final_pockets):
+        out_folder = cfg["bigbind_folder"] + "/" + pocket
+        
+        recfiles = pocket2recs[pocket]
+        ligfiles = pocket2ligs[pocket]
+
+        ligs = set()
+        for ligfile in ligfiles:
+            if ligfile not in ligfile2lig: continue
+            
+            lig = ligfile2lig[ligfile]
+            ligs.add(lig)
+            
+            os.makedirs(out_folder, exist_ok=True)
+            out_file = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + ".sdf"
+            my_pocket2ligs[pocket].add(out_file)
+            my_ligfile2lig[out_file] = lig
+            writer = Chem.SDWriter(out_file)
+            writer.write(lig)
+
+        if len(ligs):
+            for recfile in recfiles:
+                out_file = out_folder + "/" + recfile.split("/")[-1]
+                my_pocket2recs[pocket].add(out_file)
+                shutil.copyfile(recfile, out_file)
+
+    return my_pocket2recs, my_pocket2ligs, my_ligfile2lig
+
+@cache
+def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
+    rec2pocketfile = {}
+    rec2res_num = {}
+    for pocket, recfiles in tqdm(pocket2recs.items()):
+        ligfiles = pocket2ligs[pocket]
+        ligs = { ligfile2lig[lf] for lf in ligfiles }
+        pocket_files, res_numbers = save_pockets(recfiles, ligs, lig_dist_cutoff=5)
+        for recfile, pocket_file in pocket_files.items():
+            res_num = res_numbers[recfile]
+            rec2pocketfile[recfile] = pocket_file
+            rec2res_num[recfile] = res_num
+        # print(pocket_files)
+        # print(res_numbers)
+        # return
+    return rec2pocketfile, rec2res_num
+
+def get_bounds(cfg, ligs, padding):
+    bounds = None
+    for lig in ligs:
+        box = ComputeConfBox(lig.GetConformer(0))
+        if bounds is None:
+            bounds = box
+        else:
+            bounds = ComputeUnionBox(box, bounds)
+
+    bounds_min = np.array([bounds[0].x, bounds[0].y, bounds[0].z])
+    bounds_max = np.array([bounds[1].x, bounds[1].y, bounds[1].z])
+    center = 0.5*(bounds_min + bounds_max)
+    size = (bounds_max - center + padding)*2
+    return center, size
+
+@cache
+def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
+    """ Return the centroids and box sizes for each pocket """
+    centers = {}
+    sizes = {}
+    for pocket, ligfiles in tqdm(pocket2ligs.items()):
+        ligs = { ligfile2lig[lf] for lf in ligfiles }
+        center, size = get_bounds(cfg, ligs, padding)
+        centers[pocket] = center
+        sizes[pocket] = size
+    return centers, sizes
+
+@cache
+def create_struct_df(cfg,
+                     pocket2recs,
+                     pocket2ligs,
+                     ligfile2lig,
+                     rec2pocketfile,
+                     rec2res_num,
+                     pocket_centers,
+                     pocket_sizes):
+    """ Creates the dataframe from all the struct data we have """
+    lig_smiles_series = []
+    ligfile_series = []
+    lig_pdb_series = []
+    pocket_series = []
+    recfile_series = []
+    rec_pocket_file_series = []
+    rec_pdb_series = []
+    pocket_residue_series = []
+    center_series = []
+    bounds_series = []
+    for pocket, ligfiles in tqdm(pocket2ligs.items()):
+        recfiles = pocket2recs[pocket]
+        rec_pdb2rec = { recfile.split("/")[-1].split("_")[0]: recfile for recfile in recfiles }
+        current_rec_pdbs = set(rec_pdb2rec.keys())
+        for ligfile in ligfiles:
+            lig_pdb = ligfile.split("/")[-1].split("_")[0]
+            lig = ligfile2lig[ligfile]
+            smiles = Chem.MolToSmiles(lig)
+            
+            if len(current_rec_pdbs) > 1:
+                rec_pdb = random.choice(list(current_rec_pdbs - { lig_pdb }))
+            else:
+                # we only do re-docking if there are no structures to
+                # crossdock to
+                rec_pdb = next(iter(current_rec_pdbs))
+            # lol doesn't work cuz some receptors have multiple ligands
+            # bound to the same site...
+            # current_rec_pdbs = current_rec_pdbs - { rec_pdb }
+            recfile = rec_pdb2rec[rec_pdb]
+            rec_pocket_file = rec2pocketfile[recfile]
+            poc_res_num = rec2res_num[recfile]
+            center = pocket_centers[pocket]
+            bounds = pocket_sizes[pocket]
+
+            lig_smiles_series.append(smiles)
+            ligfile_series.append("/".join(ligfile.split("/")[-2:]))
+            lig_pdb_series.append(lig_pdb)
+            pocket_series.append(pocket)
+            recfile_series.append("/".join(recfile.split("/")[-2:]))
+            rec_pdb_series.append(rec_pdb)
+            rec_pocket_file_series.append(("/".join(rec_pocket_file.split("/")[-2:])))
+            pocket_residue_series.append(poc_res_num)
+            center_series.append(center)
+            bounds_series.append(bounds)
+
+    center_series = np.array(center_series)
+    bounds_series = np.array(bounds_series)
+
+    df_dict = {
+        "lig_smiles": lig_smiles_series,
+        "lig_file": ligfile_series,
+        "lig_pdb": lig_pdb_series,
+        "pocket": pocket_series,
+        "ex_rec_file": recfile_series,
+        "ex_rec_pdb": rec_pdb_series,
+        "ex_rec_pocket_file": rec_pocket_file_series,
+        "num_pocket_residues": pocket_residue_series
+    }
+    for name, num in zip("xyz", [0,1,2]):
+        df_dict[f"pocket_center_{name}"] = center_series[:,num]
+    for name, num in zip("xyz", [0,1,2]):
+        df_dict[f"pocket_size_{name}"] = bounds_series[:,num]
+            
+    return pd.DataFrame(df_dict)
+
+@cache
+def filter_struct_df(cfg, struct_df, max_pocket_size=42):
+    return struct_df.query("num_pocket_residues >= 5 and lig_pdb != ex_rec_pdb and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
 
 def run(cfg):
     os.makedirs(cfg["bigbind_folder"], exist_ok=True)
@@ -396,27 +598,46 @@ def run(cfg):
     activities_unfiltered = get_crossdocked_chembl_activities(cfg, con, cd_uniprots)
     save_activities_unfiltered(cfg, activities_unfiltered)
     activities_filtered = filter_activities(cfg, activities_unfiltered)
-    smiles2filename= save_all_mol_sdfs(cfg, activities_filtered)
+    smiles2filename = save_all_mol_sdfs(cfg, activities_filtered)
     activities_filtered = add_sdfs_to_activities(cfg, activities_filtered, smiles2filename)
-    
     
     chain2uniprot = get_chain_to_uniprot(cfg, con)
     
     uniprot2recs,\
     uniprot2ligs,\
     uniprot2pockets,\
+    pocket2uniprots,\
     pocket2recs,\
     pocket2ligs = get_uniprot_dicts(cfg, cd_files, chain2uniprot)
+    final_uniprots, final_pockets = filter_uniprots(cfg,
+                                                    uniprot2pockets,
+                                                    pocket2uniprots)
     
     lig_sdfs = download_all_lig_sdfs(cfg, uniprot2ligs)
-    # ligs = get_all_ligs(cfg, lig_sdfs)
-    # print(ligs)
+    ligfile2lig = get_all_ligs(cfg, lig_sdfs)
+    pocket2recs,\
+    pocket2ligs,\
+    ligfile2lig = save_all_structures(cfg,
+                                      final_pockets,
+                                      pocket2uniprots,
+                                      pocket2recs,
+                                      pocket2ligs,
+                                      ligfile2lig)
+
+    rec2pocketfile, rec2res_num = save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig)
+    pocket_centers, pocket_sizes = get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig)
+
+    struct_df = create_struct_df(cfg,
+                                 pocket2recs,
+                                 pocket2ligs,
+                                 ligfile2lig,
+                                 rec2pocketfile,
+                                 rec2res_num,
+                                 pocket_centers,
+                                 pocket_sizes)
+    struct_df = filter_struct_df(cfg, struct_df)
     
 if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:
         cfg = yaml.safe_load(f)
     run(cfg)
-
-
-
-
