@@ -5,6 +5,7 @@ import os
 import pickle
 import shutil
 import requests
+import subprocess
 from traceback import print_exc
 import yaml
 import io
@@ -25,6 +26,7 @@ RDLogger.DisableLog('rdApp.*')
 
 from bigbind import get_lig_url, save_pockets
 from cache import cache, item_cache
+from probis import *
 
 import signal
 
@@ -279,9 +281,9 @@ def add_sdfs_to_activities(cfg, activities, smiles2filename):
         else:
             filename_col.append("error")
 
-    activities["structure_file"] = filename_col
+    activities["lig_file"] = filename_col
     
-    activities = activities.query("structure_file != 'error'").reset_index(drop=True)
+    activities = activities.query("lig_file != 'error'").reset_index(drop=True)
     return activities
         
 @cache
@@ -586,6 +588,151 @@ def create_struct_df(cfg,
 def filter_struct_df(cfg, struct_df, max_pocket_size=42):
     return struct_df.query("num_pocket_residues >= 5 and lig_pdb != ex_rec_pdb and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
 
+def get_clusters(cfg, pocket2rep_rec, probis_scores, z_cutoff=3.5):
+    """ cluster pockets according to z-score. A pocket is added to a cluster
+    if its rec. rep has a z_score of >= the z cutoff to any other rep. recs
+    of the pockets in the cluster. The cutoff of 3.5 was used in 
+    the og. CrossDocked paper """
+    clusters = set()
+    for pocket, rec in pocket2rep_rec.items():
+        found_clusters = []
+        for cluster in clusters:
+            for pocket2 in cluster:
+                rec2 = pocket2rep_rec[pocket2]
+                key = (rec, rec2)
+                if key in probis_scores and probis_scores[key] >= z_cutoff:
+                    found_clusters.append(cluster)
+                    break
+        for cluster in found_clusters:
+            clusters.remove(cluster)
+        new_cluster = frozenset({pocket}.union(*found_clusters))
+        clusters.add(new_cluster)
+    return clusters
+
+@cache
+def get_splits(cfg, clusters, val_test_frac=0.1):
+    """ Returns a dict mapping split name (train, val, test) to pockets.
+    Both val and test splits are approx. val_test_frac of total. """
+    assert val_test_frac < 0.5
+    split_fracs = {
+        "train": 1.0 - 2*val_test_frac,
+        "val": val_test_frac,
+        "test": val_test_frac,
+    }
+    clusters = list(clusters)
+    splits = {}
+    tot_clusters = 0
+    for split, frac in split_fracs.items():
+        cur_pockets = set()
+        num_clusters = int(len(clusters)*frac)
+        for cluster in clusters[tot_clusters:tot_clusters+num_clusters]:
+            for pocket in cluster:
+                cur_pockets.add(pocket)
+        splits[split] = cur_pockets
+        tot_clusters += num_clusters
+    # assert splits as disjoint
+    for s1, p1 in splits.items():
+        for s2, p2 in splits.items():
+            if s1 == s2: continue
+            assert len(p1.intersection(p2)) == 0
+    return splits
+
+@cache
+def make_final_activities_df(cfg, 
+                             activities,
+                             uniprot2pockets,
+                             pocket2recs,
+                             rec2pocketfile,
+                             rec2res_num,
+                             pocket_centers,
+                             pocket_sizes):
+    """ Add all the receptor stuff to the activities df. Code is
+    mostly copied and pasted from the struct_df creation """
+    
+    # final_uniprots ain't so final after all...
+    # in future, this belongs elsewhere
+    final_uniprots = set()
+    for uniprot, pockets in uniprot2pockets.items():
+        if len(pockets) > 1: continue
+        pocket = next(iter(pockets))
+        recs = pocket2recs[pocket]
+        if len(recs) > 0:
+            final_uniprots.add(uniprot)
+    
+    # rename columns to jive w/ structure naming convention
+    col_order = ["lig_smiles", "lig_file", "standard_type", "standard_relation", "standard_value", "standard_units", "pchembl_value", "uniprot"]
+    new_act = activities.rename(columns={"canonical_smiles": "lig_smiles", "protein_accession": "uniprot" })[col_order]
+    new_act = new_act.query("uniprot in @final_uniprots").reset_index(drop=True)
+
+    pocket_series = []
+    recfile_series = []
+    rec_pocket_file_series = []
+    rec_pdb_series = []
+    pocket_residue_series = []
+    center_series = []
+    bounds_series = []
+    for uniprot in new_act["uniprot"]:
+        pockets = uniprot2pockets[uniprot]
+        assert len(pockets) == 1
+        pocket = next(iter(pockets))
+        recfiles = list(pocket2recs[pocket])
+        recfile = random.choice(recfiles)
+        rec_pdb = recfile.split("/")[-1].split("_")[0]
+        
+        rec_pocket_file = rec2pocketfile[recfile]
+        poc_res_num = rec2res_num[recfile]
+        center = pocket_centers[pocket]
+        bounds = pocket_sizes[pocket]
+
+        pocket_series.append(pocket)
+        recfile_series.append("/".join(recfile.split("/")[-2:]))
+        rec_pdb_series.append(rec_pdb)
+        rec_pocket_file_series.append(("/".join(rec_pocket_file.split("/")[-2:])))
+        pocket_residue_series.append(poc_res_num)
+        center_series.append(center)
+        bounds_series.append(bounds)
+
+    center_series = np.array(center_series)
+    bounds_series = np.array(bounds_series)
+    
+    df_dict = {
+        "pocket": pocket_series,
+        "ex_rec_file": recfile_series,
+        "ex_rec_pdb": rec_pdb_series,
+        "ex_rec_pocket_file": rec_pocket_file_series,
+        "num_pocket_residues": pocket_residue_series
+    }
+    for name, num in zip("xyz", [0,1,2]):
+        df_dict[f"pocket_center_{name}"] = center_series[:,num]
+    for name, num in zip("xyz", [0,1,2]):
+        df_dict[f"pocket_size_{name}"] = bounds_series[:,num]
+        
+    for name, series in df_dict.items():
+        new_act[name] = series
+    return new_act
+
+@cache
+def save_clustered_structs(cfg, struct_df, splits):
+    for split, pockets in splits.items():
+        split_struct = struct_df.query("pocket in @pockets").reset_index(drop=True)
+        split_struct.to_csv(cfg["bigbind_folder"] + f"/structures_{split}.csv", index=False)
+
+@cache
+def save_clustered_activities(cfg, activities, splits):
+    for split, pockets in splits.items():
+        split_act = activities.query("pocket in @pockets").reset_index(drop=True)
+        split_act.to_csv(cfg["bigbind_folder"] + f"/activities_{split}.csv", index=False)
+
+def tarball_everything(cfg):
+    *folders_out, folder = cfg["bigbind_folder"].split("/")
+    os.chdir("/".join(folders_out))
+    tar_out = folder + ".tar.bz2"
+    cmd = ["tar", "-cjf", tar_out, folder]
+    print(f"Running '{' '.join(cmd)}'")
+    proc = subprocess.run(cmd)
+    proc.check_returncode()
+    print(f"Final BigBind Dataset saved to {tar_out}. Bon appetit!")
+        
 def run(cfg):
     os.makedirs(cfg["bigbind_folder"], exist_ok=True)
     if cfg["cache"]:
@@ -636,6 +783,33 @@ def run(cfg):
                                  pocket_centers,
                                  pocket_sizes)
     struct_df = filter_struct_df(cfg, struct_df)
+
+    # probis stuff
+    
+    rec2srf = create_all_probis_srfs(cfg, rec2pocketfile)
+    rep_srf2nosql = find_representative_rec(cfg, pocket2recs, rec2srf)
+    rep_scores = convert_intra_results_to_json(cfg, rec2srf, rep_srf2nosql)
+    pocket2rep_rec = get_rep_recs(cfg, pocket2recs, rep_scores)
+    srf2nosql = find_all_probis_distances(cfg, pocket2rep_rec, rec2srf)
+    full_scores = convert_inter_results_to_json(cfg, rec2srf, srf2nosql)
+
+    # cluster and save everything
+    clusters = get_clusters(cfg, pocket2rep_rec, full_scores)
+    splits = get_splits(cfg, clusters)
+
+    save_clustered_structs(cfg, struct_df, splits)
+
+    activities = make_final_activities_df(cfg,\
+                                          activities_filtered,\
+                                          uniprot2pockets,\
+                                          pocket2recs,\
+                                          rec2pocketfile,\
+                                          rec2res_num,\
+                                          pocket_centers,\
+                                          pocket_sizes)
+    save_clustered_activities(cfg, activities, splits)
+
+    tarball_everything(cfg)
     
 if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:

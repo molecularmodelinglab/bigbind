@@ -152,6 +152,7 @@ def convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous):
     json """
     rec2json = {}
     for rec, srf in tqdm(rec2srf.items()):
+        if srf not in srf2nosql: continue
         nosql = srf2nosql[srf]
         json_out = nosql.split(".")[0] + ".json"
         if os.path.exists(json_out):
@@ -185,11 +186,11 @@ def convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous):
 # and once to use the rep. recs to find the inter-pocket distances
 @cache
 def convert_intra_results_to_json(cfg, rec2srf, srf2nosql, rigorous=False):
-    return convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous=False)
+    return convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous=rigorous)
 
 @cache
-def convert_itner_results_to_json(cfg, rec2srf, srf2nosql, rigorous=False):
-    return convert_probis_results_to_json(cfg, rec2srf, srf2nosql)
+def convert_inter_results_to_json(cfg, rec2srf, srf2nosql, rigorous=False):
+    return convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous=rigorous)
 
 @cache
 def get_rep_recs(cfg, pocket2recs, scores):
