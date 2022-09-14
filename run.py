@@ -713,12 +713,14 @@ def make_final_activities_df(cfg,
 
 @cache
 def save_clustered_structs(cfg, struct_df, splits):
+    struct_df.to_csv(cfg["bigbind_folder"] + "/structures_all.csv", index=False)
     for split, pockets in splits.items():
         split_struct = struct_df.query("pocket in @pockets").reset_index(drop=True)
         split_struct.to_csv(cfg["bigbind_folder"] + f"/structures_{split}.csv", index=False)
 
 @cache
 def save_clustered_activities(cfg, activities, splits):
+    activities.to_csv(cfg["bigbind_folder"] + f"/activities_all.csv", index=False)
     for split, pockets in splits.items():
         split_act = activities.query("pocket in @pockets").reset_index(drop=True)
         split_act.to_csv(cfg["bigbind_folder"] + f"/activities_{split}.csv", index=False)
