@@ -7,12 +7,16 @@ import shutil
 import requests
 import subprocess
 from traceback import print_exc
+from copy import copy
 import yaml
 import io
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem import PandasTools
+from rdkit.Chem import rdFingerprintGenerator
+from rdkit import DataStructs
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 from rdkit import RDLogger
 from rdkit.Chem import AllChem
@@ -110,6 +114,9 @@ AND a.confidence_score >= 8
 AND act.data_validity_comment IS NULL
 """
 
+allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
+min_atoms_in_mol = 5
+
 @cache
 def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
     """ Get all activities (with some filtering for quality) of small
@@ -196,17 +203,74 @@ def filter_activities(cfg, activities_unfiltered):
         "protein_accession": []
     }
     
+    uniprot2df = {} # we want to cache the ligand dfs we find for each protein
+
     for (smiles, uniprot), rows in tqdm(dup_rows.items()):
-        st_types = { r.standard_type for r in rows }
-        if len(st_types) == 1:
-            st_type = next(iter(st_types))
-        else:
-            st_type = "mixed"
+        st_types = [ r.standard_type for r in rows ]
         pchembl_values = [ r.pchembl_value for r in rows ]
-        final_pchembl = np.median(pchembl_values)
+
+        # find the acitvities of k nearest neighbors to the chemical in question
+        sim_cutoff = 0.7
+        k = 5
+
+        # janky rlu cache
+        if len(uniprot2df) > 5:
+            # first added uniprot, since dicts preserve addition order
+            key = next(iter(uniprot2df))
+            del uniprot2df[key]
+
+        if uniprot in uniprot2df:
+            df = uniprot2df[uniprot]
+        else:
+            df = copy(activities_unfiltered.query("protein_accession == @uniprot")).reset_index(drop=True)
+            PandasTools.AddMoleculeColumnToFrame(df,smilesCol='canonical_smiles')
+            mfp2_fps = rdFingerprintGenerator.GetFPs(list(df['ROMol']))
+            df['fp'] = mfp2_fps
+            query_fp = next(iter(df.query("canonical_smiles == @smiles").fp))
+            similarity = DataStructs.BulkTanimotoSimilarity(query_fp ,df['fp'])
+            df["similarity"] = similarity
+            uniprot2df[uniprot] = df
+
+        near_pchembls = []
+        near_sims = []
+        for i, row in df.sort_values(by='similarity', ascending=False).iterrows():
+            if row.canonical_smiles == smiles: continue
+            if row.similarity < sim_cutoff: break
+            if len(near_pchembls) == k: break
+            near_pchembls.append(row.pchembl_value)
+            near_sims.append(row.similarity)
+
+        near_sims = np.array(near_sims)
+        near_pchembls = np.array(near_pchembls)
+
+        # if there's at least 1 found near activitiy, use the value closest
+        if len(near_pchembls) > 0:
+            # weighted averge
+            weights = np.exp(near_sims)/sum(np.exp(near_sims))
+            w_mean = sum(weights*near_pchembls)
+            final_pchembl = None
+            final_st_type = None
+            for pchembl, st_type in zip(pchembl_values, st_types):
+                if final_pchembl is None or abs(pchembl - w_mean) < abs(final_pchembl - w_mean):
+                    final_pchembl = pchembl
+                    final_st_type = st_type
+        else:
+            # otherwise if we have Ki/Kd data, use those
+            filtered_pchembls = [ pchembl for pchembl, st_type in zip(pchembl_values, st_types) if st_type in ('Ki', 'Kd')]
+            if len(filtered_pchembls) > 0:
+                final_pchembl = np.median(filtered_pchembls)
+                st_types = set(st_types).intersection({'Ki', "Kd"})
+            else:
+                # else just take median, we have no other info
+                final_pchembl = np.median(pchembl_values)
+            
+            if len(set(st_types)) == 1:
+                final_st_type = next(iter(st_types))
+            else:
+                final_st_type = "mixed"
         final_nM = 10**(9-final_pchembl)
         new_data["canonical_smiles"].append(smiles)
-        new_data["standard_type"].append(st_type)
+        new_data["standard_type"].append(final_st_type)
         new_data["standard_relation"].append("=")
         new_data["standard_value"].append(final_nM)
         new_data["standard_units"].append('nM')
@@ -222,7 +286,6 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False):
 
     periodic_table = Chem.GetPeriodicTable()
     # ZINC yeets any molecule containing other elements, so shall we
-    allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
     
     folder = cfg["bigbind_folder"] + "/chembl_structures"
     os.makedirs(folder, exist_ok=True)
@@ -231,6 +294,8 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False):
         if os.path.exists(filename):
             return True
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+
+    if mol.GetNumAtoms() < min_atoms_in_mol: return False
 
     for atom in mol.GetAtoms():
         num = atom.GetAtomicNum()
@@ -725,6 +790,7 @@ def save_clustered_activities(cfg, activities, splits):
         split_act = activities.query("pocket in @pockets").reset_index(drop=True)
         split_act.to_csv(cfg["bigbind_folder"] + f"/activities_{split}.csv", index=False)
 
+
 def tarball_everything(cfg):
     *folders_out, folder = cfg["bigbind_folder"].split("/")
     os.chdir("/".join(folders_out))
@@ -811,7 +877,7 @@ def run(cfg):
                                           pocket_sizes)
     save_clustered_activities(cfg, activities, splits)
 
-    tarball_everything(cfg)
+    # tarball_everything(cfg)
     
 if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:
