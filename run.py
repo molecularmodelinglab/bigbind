@@ -107,13 +107,7 @@ def get_crossdocked_uniprots(cfg, con, cd_files):
 
     return crossdocked_uniprots
 
-"""
-extra stuff we yeeted from the og query so we can filter later:
-AND act.potential_duplicate = 0
-AND a.confidence_score >= 8
-AND act.data_validity_comment IS NULL
-"""
-
+# ZINC yeets any molecule containing other elements, so shall we
 allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
 min_atoms_in_mol = 5
 
@@ -213,8 +207,11 @@ def filter_activities(cfg, activities_unfiltered):
         sim_cutoff = 0.7
         k = 5
 
+        # only use median if the std of the pchembl values is less than cutoff
+        std_cutoff = 0.1
+
         # janky rlu cache
-        if len(uniprot2df) > 5:
+        if len(uniprot2df) > 3:
             # first added uniprot, since dicts preserve addition order
             key = next(iter(uniprot2df))
             del uniprot2df[key]
@@ -229,6 +226,7 @@ def filter_activities(cfg, activities_unfiltered):
             query_fp = next(iter(df.query("canonical_smiles == @smiles").fp))
             similarity = DataStructs.BulkTanimotoSimilarity(query_fp ,df['fp'])
             df["similarity"] = similarity
+            df.drop('ROMol', axis=1, inplace=True)
             uniprot2df[uniprot] = df
 
         near_pchembls = []
@@ -261,13 +259,18 @@ def filter_activities(cfg, activities_unfiltered):
                 final_pchembl = np.median(filtered_pchembls)
                 st_types = set(st_types).intersection({'Ki', "Kd"})
             else:
-                # else just take median, we have no other info
-                final_pchembl = np.median(pchembl_values)
+                # else just take median, if the values ain't too far.
+                # we have no other info
+                if np.std(pchembl_values) < std_cutoff:
+                    final_pchembl = np.median(pchembl_values)
+                else:
+                    continue
             
             if len(set(st_types)) == 1:
                 final_st_type = next(iter(st_types))
             else:
                 final_st_type = "mixed"
+
         final_nM = 10**(9-final_pchembl)
         new_data["canonical_smiles"].append(smiles)
         new_data["standard_type"].append(final_st_type)
@@ -282,10 +285,9 @@ def filter_activities(cfg, activities_unfiltered):
 
     return activities
 
-def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False):
+def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
 
     periodic_table = Chem.GetPeriodicTable()
-    # ZINC yeets any molecule containing other elements, so shall we
     
     folder = cfg["bigbind_folder"] + "/chembl_structures"
     os.makedirs(folder, exist_ok=True)
@@ -295,13 +297,17 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False):
             return True
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
 
-    if mol.GetNumAtoms() < min_atoms_in_mol: return False
+    if mol.GetNumAtoms() < min_atoms_in_mol: 
+        if verbose:
+            print(f"Rejecting {smiles} because it has only {mol.GetNumAtoms()} atoms")
+        return False
 
     for atom in mol.GetAtoms():
         num = atom.GetAtomicNum()
         sym = Chem.PeriodicTable.GetElementSymbol(periodic_table, num)
-        if sym not in allowed_atoms and verbose:
-            print(f"Rejecting {smiles} because it contains {sym}.")
+        if sym not in allowed_atoms:
+            if verbose:
+                print(f"Rejecting {smiles} because it contains {sym}.")
             return False
 
     try:

@@ -4,10 +4,12 @@ import subprocess
 import random
 import numpy as np
 import sys
+import pandas as pd
 
 from tqdm import tqdm
 from glob import glob
 from traceback import print_exc
+from functools import partial
 from multiprocessing import Pool
 
 from vina import Vina
@@ -15,36 +17,49 @@ from meeko import MoleculePreparation, PDBQTMolecule
 from rdkit import Chem
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 
+def prepare_rec(cfg, rec_file):
+    rec = cfg["bigbind_folder"] + "/" + rec_file
+    rec_folder, imm_rec_file = rec.split("/")[-2:]
+    out_folder = cfg["docked_folder"] + "/" + rec_folder
+    out_file = out_folder + "/" + imm_rec_file + "qt"
+    
+    os.makedirs(out_folder, exist_ok=True)
+
+    if os.path.exists(out_file): return
+    
+    prep_cmd = f"{cfg['adfr_folder']}/bin/prepare_receptor"
+    proc = subprocess.run([prep_cmd, "-r", rec, "-o", out_file])
+    try:
+        proc.check_returncode()
+    except KeyboardInterrupt:
+        raise
+    except:
+        print_exc()
+
 def prepare_recs(cfg):
 
-    recs = glob(cfg["bigbind_folder"] + "/*/*_rec.pdb")
+    structures = pd.read_csv(cfg["bigbind_folder"] + "/structures_all.csv")
+    poc_files = structures.ex_rec_pocket_file.unique()
+    rec_files = structures.ex_rec_file.unique()
 
-    for rec in tqdm(recs):
-        rec_folder, imm_rec_file = rec.split("/")[-2:]
-        out_folder = cfg["docked_folder"] + "/" + rec_folder
-        out_file = out_folder + "/" + imm_rec_file + "qt"
-        
-        os.makedirs(out_folder, exist_ok=True)
+    with Pool(processes=8) as p:
+        with tqdm(total=len(rec_files)) as pbar:
+            prep = partial(prepare_rec, cfg)
+            for _ in p.imap_unordered(prep, rec_files):
+                pbar.update()
 
-        if os.path.exists(out_file): continue
-        
-        prep_cmd = f"{cfg['adfr_folder']}/bin/prepare_receptor"
-        proc = subprocess.run([prep_cmd, "-r", rec, "-o", out_file])
-        try:
-            proc.check_returncode()
-        except KeyboardInterrupt:
-            raise
-        except:
-            print_exc()
             
 def prepare_ligs(cfg):
-    ligs = glob(cfg["bigbind_folder"] + "/*/*_lig.sdf")
+    ligs = glob(cfg["bigbind_folder"] + "/*/*.sdf")
+    # print(len(ligs))
+    # return
     for lig_file in tqdm(ligs):
         lig_folder, imm_lig_file = lig_file.split("/")[-2:]
         out_folder = cfg["docked_folder"] + "/" + lig_folder
         out_file = out_folder + "/" + imm_lig_file.split(".")[0] + ".pdbqt"
         # todo: only for debugging
-        if not os.path.exists(out_folder): continue
+        # if not os.path.exists(out_folder): continue
+        os.makedirs(out_folder, exist_ok=True)
         lig = Chem.SDMolSupplier(lig_file)[0]
 
         preparator = MoleculePreparation(hydrate=False) # macrocycles flexible by default since v0.3.0
@@ -54,8 +69,9 @@ def prepare_ligs(cfg):
             preparator.write_pdbqt_file(out_file)
         except KeyboardInterrupt:
             raise
-        except:
-            print_exc()
+        except: 
+            pass
+            # print_exc()
 
 def get_bounds(cfg, lig_files, padding=4):
     bounds = None
@@ -165,8 +181,8 @@ if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:
         cfg = yaml.safe_load(f)
         
-    # prepare_recs(cfg)
+    prepare_recs(cfg)
     # prepare_ligs(cfg)
-    redock = True
-    clean_docked(cfg, redock)
-    dock_all(cfg, redock)
+    # redock = True
+    # clean_docked(cfg, redock)
+    # dock_all(cfg, redock)
