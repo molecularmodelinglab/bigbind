@@ -5,6 +5,7 @@ import numpy as np
 from meeko import MoleculePreparation, PDBQTMolecule
 import rdkit
 from rdkit import Chem
+from rdkit.Chem import rdMolTransforms
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 from traceback import print_exc
 import subprocess
@@ -16,7 +17,7 @@ from cache import item_cache
 def move_lig_to_center(lig, center):
     center_pt = rdkit.Geometry.rdGeometry.Point3D(*center)
     conf = lig.GetConformer()
-    lig_center = Chem.rdMolTransforms.ComputeCentroid(conf)
+    lig_center = rdMolTransforms.ComputeCentroid(conf)
     for i in range(lig.GetNumAtoms()):
         og_pos = conf.GetAtomPosition(i)
         new_pos = og_pos + center_pt - lig_center
@@ -60,13 +61,8 @@ def vina_score_cached(cfg, i, row, lig_file, rec_file, exhaust=8):
     cmd += [ "--out", out_file ]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    try:
-        # proc.check_returncode()
-        out, err = proc.communicate()
-    except KeyboardInterrupt:
-        raise
-    except:
-        print_exc()
+    # proc.check_returncode()
+    out, err = proc.communicate()
     return out_file
 
 
@@ -81,7 +77,15 @@ def get_vina_score(cfg, tup):
     if not os.path.exists(lig_file) or not os.path.exists(rec_file):
         return None
     
-    ret = vina_score_cached(cfg, i, row, lig_file, rec_file)
+    ret = None
+    try:
+        ret = vina_score_cached(cfg, i, row, lig_file, rec_file)
+    except KeyboardInterrupt:
+        raise
+    except:
+        raise
+        print_exc()
+    
     return ret
 
 if __name__ == "__main__":
