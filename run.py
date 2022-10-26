@@ -1,5 +1,6 @@
 import random
 import pandas as pd
+from glob import glob
 import sqlite3
 import os
 import pickle
@@ -14,6 +15,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem import Descriptors
 from rdkit.Chem import PandasTools
 from rdkit.Chem import rdFingerprintGenerator
 from rdkit import DataStructs
@@ -31,6 +33,7 @@ RDLogger.DisableLog('rdApp.*')
 from bigbind import get_lig_url, save_pockets
 from cache import cache, item_cache
 from probis import *
+from sna import *
 
 import signal
 
@@ -79,21 +82,12 @@ def load_crossdocked_files(cfg):
     """ Get the pdb files associated with the crystal rec and lig files.
     (the crossdocked types file only lists gninatypes files). Returns a
     dict mapping rec files to a list of lig files that bind to the rec """
-    crossdocked_types = cfg["crossdocked_folder"] + "/types/it2_tt_v1.1_completeset_train0.types"
-    
-    ret = defaultdict(set)
-    num_chunks = 225838
-    for i, chunk in tqdm(enumerate(pd.read_csv(crossdocked_types, sep=' ', names=["label", "binding_affinity", "crystal_rmsd", "rec_file", "lig_file", "vina_score"], chunksize=100)), total=num_chunks):
-        folder = chunk["rec_file"].apply(lambda rf: rf.split("/")[0])
-        lig_prefix = chunk["lig_file"].apply(lambda lf: lf.split("_lig_")[0].split("_rec_")[1])
-        lig_file = folder + lig_prefix.apply(lambda pre: "/" + pre + "_lig.pdb")
-        lig_file = lig_file.apply(lambda lf: cfg["crossdocked_folder"] + "/" + lf)
-        rec_file = chunk["rec_file"].apply(lambda lf: cfg["crossdocked_folder"] + "/" + "_".join(lf.split("_")[:-1]) + ".pdb")
-        for rec_file, lig_file in zip(rec_file, lig_file):
-            assert rec_file.endswith("_rec.pdb")
-            assert lig_file.endswith("_lig.pdb")
-            ret[rec_file].add(lig_file)
 
+    ret = defaultdict(set)
+    for pocket in tqdm(glob(cfg["crossdocked_folder"] + "/*")):
+        for rec_file in glob(pocket + "/*_rec.pdb"):
+            for lig_file in glob(pocket + "/*_lig.pdb"):
+                ret[rec_file].add(lig_file)
     return ret
 
 @cache
@@ -110,6 +104,7 @@ def get_crossdocked_uniprots(cfg, con, cd_files):
 # ZINC yeets any molecule containing other elements, so shall we
 allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
 min_atoms_in_mol = 5
+max_mol_weight = 1000
 
 @cache
 def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
@@ -152,9 +147,11 @@ def get_crossdocked_chembl_activities(cfg, con, cd_uniprots):
     filename = cfg["cache_folder"] + "/get_crossdocked_chembl_activities_chunked.csv"
     with open(filename, 'w'): pass
 
-    chunks = pd.read_sql_query(query,con,chunksize=1000)
+    approx_tot = 1571668
+    chunksize = 1000
+    chunks = pd.read_sql_query(query,con,chunksize=chunksize)
     header = True
-    for i, chunk in enumerate(tqdm(chunks)):
+    for i, chunk in enumerate(tqdm(chunks, total=int(approx_tot/chunksize))):
 
         chunk.to_csv(filename, header=header, mode='a', index=False)
 
@@ -177,7 +174,7 @@ def filter_activities(cfg, activities_unfiltered):
     # we don't have these values for everything after deduping so just drop em
     activities = activities.drop(columns=["compound_chembl_id", "potential_duplicate", "data_validity_comment", "confidence_score", "target_chembl_id", "target_type", "assay_id"])
 
-    # now we filter duplicates. For now, just use the median for all duplicated measurements
+    # now we filter duplicates
     dup_indexes = activities.duplicated(keep=False, subset=['canonical_smiles', 'protein_accession'])
     dup_df = activities[dup_indexes]
 
@@ -202,6 +199,20 @@ def filter_activities(cfg, activities_unfiltered):
     for (smiles, uniprot), rows in tqdm(dup_rows.items()):
         st_types = [ r.standard_type for r in rows ]
         pchembl_values = [ r.pchembl_value for r in rows ]
+        
+        # todo: remove. just taking the median for the thing I'm sending to Paul
+
+        final_pchembl = np.median(pchembl_values)
+        final_st_type = "mixed"
+        final_nM = 10**(9-final_pchembl)
+        new_data["canonical_smiles"].append(smiles)
+        new_data["standard_type"].append(final_st_type)
+        new_data["standard_relation"].append("=")
+        new_data["standard_value"].append(final_nM)
+        new_data["standard_units"].append('nM')
+        new_data["pchembl_value"].append(final_pchembl)
+        new_data["protein_accession"].append(uniprot)
+        continue
 
         # find the acitvities of k nearest neighbors to the chemical in question
         sim_cutoff = 0.7
@@ -285,6 +296,18 @@ def filter_activities(cfg, activities_unfiltered):
 
     return activities
 
+# alas, this takes up too much memory. need to create mols on the fly
+@cache
+def get_smiles_to_mol(cfg, activities):
+    """ Creates an rdkit mol for each ligand in activities. Returns mapping
+    from canonical_smiles to mol """
+    ret = {}
+    for smiles in tqdm(activities.canonical_smiles):
+        if smiles in ret: continue
+        mol = Chem.MolFromSmiles(smiles)
+        ret[smiles] = mol
+    return ret
+
 def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
 
     periodic_table = Chem.GetPeriodicTable()
@@ -302,6 +325,12 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
             print(f"Rejecting {smiles} because it has only {mol.GetNumAtoms()} atoms")
         return False
 
+    mw = Descriptors.MolWt(mol)
+    if mw > max_mol_weight:
+        if verbose:
+            print(f"Rejecting {smiles} because it is too heavy {mw=}")
+        return False
+
     for atom in mol.GetAtoms():
         num = atom.GetAtomicNum()
         sym = Chem.PeriodicTable.GetElementSymbol(periodic_table, num)
@@ -310,12 +339,19 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
                 print(f"Rejecting {smiles} because it contains {sym}.")
             return False
 
+    # early exit cus this takes a while and Paul doesn't need the sdfs
+    # return True
+
     try:
         with timeout(20):
             # try to come up with a 3d structure
             for i in range(num_embed_tries):
                 conf_id = AllChem.EmbedMolecule(mol)
                 if conf_id == 0:
+                    try:
+                        AllChem.UFFOptimizeMolecule(mol, 500)
+                    except RuntimeError:
+                        return False
                     break
             else:
                 return False
@@ -655,9 +691,26 @@ def create_struct_df(cfg,
             
     return pd.DataFrame(df_dict)
 
+max_pocket_size = 42
+max_pocket_residues = 5
 @cache
-def filter_struct_df(cfg, struct_df, max_pocket_size=42):
-    return struct_df.query("num_pocket_residues >= 5 and lig_pdb != ex_rec_pdb and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+def filter_struct_df(cfg, struct_df):
+    return struct_df.query("num_pocket_residues >= @max_pocket_residues and lig_pdb != ex_rec_pdb and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+
+@cache
+def filter_act_df_final(cfg, act_df):
+    ret = act_df.query("num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+    mask = []
+    for i, row in tqdm(ret.iterrows(), total=len(ret)):
+        lig_file = cfg["bigbind_folder"] + "/" + row.lig_file
+        if not os.path.exists(lig_file):
+            # print(f"! Something is up... {lig_file} doesn't exist...")
+            mask.append(False)
+        else:
+            mask.append(True)
+    ret = ret[mask].reset_index(drop=True)
+    return ret
+
 
 def get_clusters(cfg, pocket2rep_rec, probis_scores, z_cutoff=3.5):
     """ cluster pockets according to z-score. A pocket is added to a cluster
@@ -681,7 +734,27 @@ def get_clusters(cfg, pocket2rep_rec, probis_scores, z_cutoff=3.5):
     return clusters
 
 @cache
-def get_splits(cfg, clusters, val_test_frac=0.1):
+def get_lit_pcba_pockets(cfg, con, uniprot2pockets):
+
+    pcba_files = glob(cfg["lit_pcba_folder"] + "/*/*.mol2")
+    pcba_pdbs = defaultdict(set) # { f.split("/")[-1].split("_")[0] for f in pcba_files }
+    for f in pcba_files:
+        target = f.split("/")[-2]
+        pdb = f.split("/")[-1].split("_")[0]
+        pcba_pdbs[target].add(pdb)
+    targ2pockets = {}
+    for target, pdbs in pcba_pdbs.items():
+        pdbs_str = ", ".join(map(lambda s: f"'{s}'", pdbs))
+        uniprot_df = pd.read_sql_query(f"select SP_PRIMARY from sifts where PDB in ({pdbs_str})", con)
+        pcba_uniprots = set(uniprot_df.SP_PRIMARY)
+        pcba_pockets = set()
+        for uniprot in pcba_uniprots:
+            pcba_pockets = pcba_pockets.union(uniprot2pockets[uniprot])
+        targ2pockets[target] = pcba_pockets
+    return targ2pockets
+
+@cache
+def get_splits(cfg, clusters, lit_pcba_pockets, val_test_frac=0.1):
     """ Returns a dict mapping split name (train, val, test) to pockets.
     Both val and test splits are approx. val_test_frac of total. """
     assert val_test_frac < 0.5
@@ -690,6 +763,7 @@ def get_splits(cfg, clusters, val_test_frac=0.1):
         "val": val_test_frac,
         "test": val_test_frac,
     }
+    all_pcba_pockets = set().union(*lit_pcba_pockets.values())
     clusters = list(clusters)
     splits = {}
     tot_clusters = 0
@@ -697,10 +771,19 @@ def get_splits(cfg, clusters, val_test_frac=0.1):
         cur_pockets = set()
         num_clusters = int(len(clusters)*frac)
         for cluster in clusters[tot_clusters:tot_clusters+num_clusters]:
+            if split != "test" and len(cluster.intersection(all_pcba_pockets)) > 0:
+                continue
             for pocket in cluster:
                 cur_pockets.add(pocket)
         splits[split] = cur_pockets
         tot_clusters += num_clusters
+
+    # re-add all the LIT-PCBA pockets to test
+    for cluster in clusters:
+        if len(cluster.intersection(all_pcba_pockets)) > 0:
+            for pocket in cluster:
+                splits["test"].add(pocket)
+
     # assert splits as disjoint
     for s1, p1 in splits.items():
         for s2, p2 in splits.items():
@@ -716,9 +799,12 @@ def make_final_activities_df(cfg,
                              rec2pocketfile,
                              rec2res_num,
                              pocket_centers,
-                             pocket_sizes):
+                             pocket_sizes,
+                             act_cutoff = 5.0):
     """ Add all the receptor stuff to the activities df. Code is
-    mostly copied and pasted from the struct_df creation """
+    mostly copied and pasted from the struct_df creation. Act_cutoff
+    is the pchembl value at which we label a compound as active. Default
+    is 5.0 (10 uM) """
     
     # final_uniprots ain't so final after all...
     # in future, this belongs elsewhere
@@ -729,9 +815,11 @@ def make_final_activities_df(cfg,
         recs = pocket2recs[pocket]
         if len(recs) > 0:
             final_uniprots.add(uniprot)
+
+    activities["active"] = activities["pchembl_value"] > act_cutoff
     
     # rename columns to jive w/ structure naming convention
-    col_order = ["lig_smiles", "lig_file", "standard_type", "standard_relation", "standard_value", "standard_units", "pchembl_value", "uniprot"]
+    col_order = ["lig_smiles", "lig_file", "standard_type", "standard_relation", "standard_value", "standard_units", "pchembl_value", "active", "uniprot"]
     new_act = activities.rename(columns={"canonical_smiles": "lig_smiles", "protein_accession": "uniprot" })[col_order]
     new_act = new_act.query("uniprot in @final_uniprots").reset_index(drop=True)
 
@@ -818,6 +906,8 @@ def run(cfg):
     cd_uniprots = get_crossdocked_uniprots(cfg, con, cd_files)
     activities_unfiltered = get_crossdocked_chembl_activities(cfg, con, cd_uniprots)
     save_activities_unfiltered(cfg, activities_unfiltered)
+    # smiles2mol = get_smiles_to_mol(cfg, activities_unfiltered)
+
     activities_filtered = filter_activities(cfg, activities_unfiltered)
     smiles2filename = save_all_mol_sdfs(cfg, activities_filtered)
     activities_filtered = add_sdfs_to_activities(cfg, activities_filtered, smiles2filename)
@@ -868,8 +958,9 @@ def run(cfg):
     full_scores = convert_inter_results_to_json(cfg, rec2srf, srf2nosql)
 
     # cluster and save everything
+    lit_pcba_pockets = get_lit_pcba_pockets(cfg, con, uniprot2pockets)
     clusters = get_clusters(cfg, pocket2rep_rec, full_scores)
-    splits = get_splits(cfg, clusters)
+    splits = get_splits(cfg, clusters, lit_pcba_pockets)
 
     save_clustered_structs(cfg, struct_df, splits)
 
@@ -881,9 +972,18 @@ def run(cfg):
                                           rec2res_num,\
                                           pocket_centers,\
                                           pocket_sizes)
+    activities = filter_act_df_final(cfg, activities)
+
     save_clustered_activities(cfg, activities, splits)
 
-    # tarball_everything(cfg)
+    # SNA!
+
+    # z cutoff of 3 clusters the kinases together
+    big_clusters = get_clusters(cfg, pocket2rep_rec, full_scores, z_cutoff=3.0)
+    save_all_sna_dfs(cfg, big_clusters, smiles2filename)
+    save_all_screen_dfs(cfg, big_clusters, smiles2filename)
+
+    tarball_everything(cfg)
     
 if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:

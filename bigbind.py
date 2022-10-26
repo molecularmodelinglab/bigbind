@@ -31,7 +31,7 @@ def get_rec_coords(rec):
             if residue.get_resname() == "HOH": continue
             for atom in residue:
                 elem = to_elem(atom.element)
-                atomic_num = Chem.Atom(elem).GetAtomicNum()
+                # atomic_num = Chem.Atom(elem).GetAtomicNum()
                 coords.append(list(atom.get_vector()))
                 res_indexes.append(str(residue.get_full_id()))
     return np.array(res_indexes), np.array(coords)

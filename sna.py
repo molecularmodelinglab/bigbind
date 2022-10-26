@@ -1,17 +1,17 @@
 from collections import defaultdict
 import pandas as pd
+from tqdm import tqdm
+import random
+from copy import deepcopy
 import os
 
 from cache import cache
 
-def make_sna_df(cfg, df, big_clusters, smiles2filename, neg_ratio, act_cutoff=5.0):
+def make_sna_df(cfg, df, big_clusters, smiles2filename, neg_ratio):
     """ Adds putative negative examples to the activity df.
     big_clusters are the set of clusters within which we assume
     things might bind (e.g. within the kinase cluster). Neg_ratio
-    is the ratio of new negatives to the original dataset. Act_cutoff
-    is the pchembl value at which we label a compound as active. Default
-    is 5.0 (10 uM). """
-    df["active"] = df["pchembl_value"] > act_cutofff
+    is the ratio of new negatives to the original dataset. """
 
     poc2cluster = {}
     for cluster in big_clusters:
@@ -57,6 +57,7 @@ def make_sna_df(cfg, df, big_clusters, smiles2filename, neg_ratio, act_cutoff=5.
     
     return sna_df
 
+@cache
 def save_all_sna_dfs(cfg, big_clusters, smiles2filename, neg_ratio=1):
     for split in ["val", "test", "train" ]:
         df = pd.read_csv(cfg["bigbind_folder"] + f"/activities_{split}.csv")
@@ -68,7 +69,11 @@ def save_all_sna_dfs(cfg, big_clusters, smiles2filename, neg_ratio=1):
 def make_screen_df(cfg, df, pocket, poc2cluster, smiles2pockets, smiles2filename, tot_len=1000, max_actives=10):
     cluster = poc2cluster[pocket]
     poc_df = df.query("pocket == @pocket")
+    # shuffle!
+    poc_df = poc_df.sample(frac=1).reset_index(drop=True)
     active = poc_df.query("active").reset_index(drop=True)[:max_actives]
+    if len(active) == 0:
+        print(f"Skipping {pocket} because there are no actives")
     inactive = poc_df.query("not active")
     out = pd.concat([active, inactive]).reset_index(drop=True)
     seen_smiles = set(out.lig_smiles)
@@ -99,7 +104,8 @@ def make_screen_df(cfg, df, pocket, poc2cluster, smiles2pockets, smiles2filename
 
     return out
 
-def save_all_screen_dfs(cfg, big_clusters, smiles2filename, act_cutoff=5.0):
+@cache
+def save_all_screen_dfs(cfg, big_clusters, smiles2filename):
 
     poc2cluster = {}
     for cluster in big_clusters:
@@ -110,8 +116,6 @@ def save_all_screen_dfs(cfg, big_clusters, smiles2filename, act_cutoff=5.0):
         out_folder = cfg["bigbind_folder"] + f"/{split}_screens"
         os.makedirs(out_folder, exist_ok=True)
         df = pd.read_csv(cfg["bigbind_folder"] + f"/activities_{split}.csv")
-
-        df["active"] = df["pchembl_value"] > act_cutoff
 
         smiles2pockets = defaultdict(set)
         for i, row in tqdm(df.iterrows(), total=len(df)):

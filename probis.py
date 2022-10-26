@@ -52,7 +52,6 @@ def find_representative_rec(cfg, pocket2recs, rec2srf, n_cpu=8, rigorous=True):
 
     srf2nosql = {}
     for pocket, recs in tqdm(pocket2recs.items()):
-        # if pocket not in ("PK3CG_HUMAN_143_1102_0", "BEV1A_BETPN_2_160_0"): continue
         srf_fname = cfg["cache_folder"] + f"/find_representative_rec_{pocket}.txt"
         srfs = { rec2srf[rec] for rec in recs }
         with open(srf_fname, "w") as f:

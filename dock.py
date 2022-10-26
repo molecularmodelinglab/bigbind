@@ -181,8 +181,8 @@ if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:
         cfg = yaml.safe_load(f)
         
-    prepare_recs(cfg)
-    # prepare_ligs(cfg)
+    # prepare_recs(cfg)
+    prepare_ligs(cfg)
     # redock = True
     # clean_docked(cfg, redock)
     # dock_all(cfg, redock)
