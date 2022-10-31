@@ -44,3 +44,7 @@ The main meat of the dataset is in the `activities_*.csv` files. The non-SNA act
 | num_pocket_residues | number of residues in the example pocket file |
 | pocket_center_{x,y,z} | center of the example pocket bounding box |
 | pocket_size_{x,y,z}   | sizes of the example pocket bounding box |
+
+The SNA activities csvs (`activities_sna_1_*.csv`) have the same structure, but don't have any of the specific activity-related values (e.g. `pchembl_value`). Instead all they have is the boolean `active` column.
+
+The `*_screens` folders contain the virtual screening benchmarks described in the paper. There is a seperate csv for each pocket, structured exactly like the SNA csv files.
