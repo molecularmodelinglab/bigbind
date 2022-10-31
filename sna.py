@@ -74,6 +74,7 @@ def make_screen_df(cfg, df, pocket, poc2cluster, smiles2pockets, smiles2filename
     active = poc_df.query("active").reset_index(drop=True)[:max_actives]
     if len(active) == 0:
         print(f"Skipping {pocket} because there are no actives")
+        return None
     inactive = poc_df.query("not active")
     out = pd.concat([active, inactive]).reset_index(drop=True)
     seen_smiles = set(out.lig_smiles)
@@ -113,6 +114,7 @@ def save_all_screen_dfs(cfg, big_clusters, smiles2filename):
             poc2cluster[pocket] = cluster
 
     for split in ["val", "test" ]:
+        print(f"Making screen benchmark for {split} set")
         out_folder = cfg["bigbind_folder"] + f"/{split}_screens"
         os.makedirs(out_folder, exist_ok=True)
         df = pd.read_csv(cfg["bigbind_folder"] + f"/activities_{split}.csv")
@@ -123,6 +125,7 @@ def save_all_screen_dfs(cfg, big_clusters, smiles2filename):
 
         for pocket in tqdm(df.pocket.unique()):
             screen_df = make_screen_df(cfg, df, pocket, poc2cluster, smiles2pockets, smiles2filename)
+            if screen_df is None: continue
             out_file = out_folder + "/" + pocket + ".csv"
             screen_df.to_csv(out_file, index=False)
 

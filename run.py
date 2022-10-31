@@ -984,7 +984,10 @@ def run(cfg):
     save_all_screen_dfs(cfg, big_clusters, smiles2filename)
 
     tarball_everything(cfg)
-    
+
+SEED = 49
+random.seed(SEED)
+np.random.seed(SEED)
 if __name__ == "__main__":
     with open("cfg.yaml", "r") as f:
         cfg = yaml.safe_load(f)
