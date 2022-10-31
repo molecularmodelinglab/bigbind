@@ -48,3 +48,18 @@ The main meat of the dataset is in the `activities_*.csv` files. The non-SNA act
 The SNA activities csvs (`activities_sna_1_*.csv`) have the same structure, but don't have any of the specific activity-related values (e.g. `pchembl_value`). Instead all they have is the boolean `active` column.
 
 The `*_screens` folders contain the virtual screening benchmarks described in the paper. There is a seperate csv for each pocket, structured exactly like the SNA csv files.
+
+There are also `structures_*.csv` files describing the 3d crystal structures of ligands if you so desire. This data isn't used in the paper, but you might find it useful. It's really just a way to access the CrossDocked data if you don't care about the docked poses. The structure of the structues file is as follows:
+
+| Column           | Description                                                    |
+| :---             |    :----                                                       |
+| lig_smiles       | same as in activities                                   |
+| lig_file         | filename of the ligand sdf in its crystal 3D pose |
+| lig_pdb          | pdb id of the crystal structure the ligand came from |
+| pocket           | same as in activities                                   |
+| ex_rec_file      | same as in activities                                   |
+| ex_rec_pdb       | same as in activities                                   |
+| ex_rec_pocket_file | same as in activities                                   |
+| num_pocket_residues | same as in activities                                   |
+| pocket_center_{x,y,z} | same as in activities                                   |
+| pocket_size_{x,y,z}   | same as in activities                                   |
