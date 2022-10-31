@@ -27,7 +27,7 @@ There's a bunch of pocket folders with fancy names like `FABF_BACSU_1_413_0`. Wi
 The main meat of the dataset is in the `activities_*.csv` files. The non-SNA activities csvs contain all the (filtered) ChEMBL activities, and have the following columns:
 
 | Column           | Description                                                    |
-| :---             |    ----:                                                       |
+| :---             |    :----                                                       |
 | lig_smiles       | SMILES string for the ligand                                   |
 | lig_file         | filename of UFF-optimized ligand sdf (in `chembl_structures/`) |
 | standard_type    | type of the activity from ChEMBL. E.g. IC50 of Ki/Kd           |
