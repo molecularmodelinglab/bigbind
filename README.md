@@ -31,12 +31,12 @@ The main meat of the dataset is in the `activities_*.csv` files. The non-SNA act
 | lig_smiles       | SMILES string for the ligand                                   |
 | lig_file         | filename of UFF-optimized ligand sdf (in `chembl_structures/`) |
 | standard_type    | type of the activity from ChEMBL. E.g. IC50 of Ki/Kd           |
-| standrd_relation | relation from ChEMBL (=, >, <). Always = in BigBind            |
+| standard_relation | relation from ChEMBL (=, >, <). Always = in BigBind            |
 | standard_value   | raw value of the activity                                      |
 | standard_units   | units of the raw activity (nM, μM, etc). Will usually be nM but plz don't rely on that |
 | pchembl_value    | ChEMBL-provided log-normalized activity value. Defined at -log_10(activity in nM) |
 | active           | whether of not the pchembl value is greater than our activity cutoff (10 μM) |
-| uniprot          | Unprot accession of the receptor |
+| uniprot          | Uniprot accession of the receptor |
 | pocket           | Receptor pocket folder. We assume the ligand can bind to any of the aligned recptors in the folder |
 | ex_rec_file      | a randomly selected full receptor from the pocket folder |
 | ex_rec_pdb       | the pdb id of that randomly selected receptor |
@@ -57,9 +57,35 @@ There are also `structures_*.csv` files describing the 3d crystal structures of 
 | lig_file         | filename of the ligand sdf in its crystal 3D pose |
 | lig_pdb          | pdb id of the crystal structure the ligand came from |
 | pocket           | same as in activities                                   |
-| ex_rec_file      | same as in activities                                   |
-| ex_rec_pdb       | same as in activities                                   |
-| ex_rec_pocket_file | same as in activities                                   |
+| ex_rec_*         | same as in activities. To support cross-docking structure prediction, we assert ex_rec_pdb != lig_pdb |
 | num_pocket_residues | same as in activities                                   |
 | pocket_center_{x,y,z} | same as in activities                                   |
 | pocket_size_{x,y,z}   | same as in activities                                   |
+
+## Creating the dataset
+
+If you desire to create the dataset yourself, first you'll need to get the input data. Download and extract the [ChEMBL sqlite database](https://chembl.gitbook.io/chembl-interface-documentation/downloads) (version 30 in the paper), the [CrossDocked dataset](http://bits.csb.pitt.edu/files/crossdock2020/), [LIT-PCBA](https://drugdesign.unistra.fr/LIT-PCBA/), and the [SIFTS database](https://www.ebi.ac.uk/pdbe/docs/sifts/quick.html) (you want the `pdb_chain_uniprot.csv` file).
+
+Now you create your config file. Put the following into `cfg.yaml`:
+
+```yaml
+
+bigbind_folder: "/path/to/desired/output/folder"
+crossdocked_folder: "/path/to/CrossDocked/dataset"
+lit_pcba_folder: "/path/to/LIT-PCBA/dataset"
+chembl_file: "/path/to/chembl/sqlite/dataset"
+sifts_file: "/path/to/SIFTS/pdb_chain_uniprot/csv/file"
+
+# we cache all intermediate outputs. This is where we should save the cached files
+cache_folder: "/path/to/cache/folder"
+cache: true
+# if something went wrong and you need to recalculate a cached function,
+# put the function name in the recalc list
+recalc:
+  - null
+
+```
+
+Now pip install the requirements, and you're ready to run. Simply run `python run.py` and it will produce the dataset. Since we cache intermediate outputs, if something goes wrong you can re-run `run.py` and it will start where it left off. Just make sure you modify offending functions and add them to the `recalc` list before re-running.
+
+Enjoy! If you have any questions, email me at [mixarcid@unc.edu](mailto:mixarcid@unc.edu)
