@@ -13,3 +13,5 @@ logs
 *.json
 *.out
 *.err
+
+notebooks

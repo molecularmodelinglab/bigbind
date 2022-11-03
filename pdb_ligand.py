@@ -14,11 +14,6 @@ import scipy.spatial as spa
 from Bio.PDB import get_surface, PDBParser, ShrakeRupley, PDBIO, Select
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
-def get_crossdocked_df():
-    crossdocked_types = "/home/boris/Data/CrossDocked/types/it2_tt_v1.1_completeset_train0.types"
-    in_df = pd.read_csv(crossdocked_types, sep=' ', names=["label", "binding_affinity", "crystal_rmsd", "rec_file", "lig_file", "vina_score"])
-    return in_df
-
 def to_elem(s):
     return s[0] + s[1:].lower()
 

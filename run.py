@@ -30,7 +30,7 @@ from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
 RDLogger.DisableLog('rdApp.*')
 
-from bigbind import get_lig_url, save_pockets
+from pdb_ligand import get_lig_url, save_pockets
 from cache import cache, item_cache
 from probis import *
 from sna import *
