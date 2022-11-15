@@ -75,7 +75,7 @@ def make_screen_df(cfg, df, pocket, poc2cluster, smiles2pockets, smiles2filename
     if len(active) == 0:
         print(f"Skipping {pocket} because there are no actives")
         return None
-    inactive = poc_df.query("not active")
+    inactive = poc_df.query("not active")[:(tot_len - len(active))]
     out = pd.concat([active, inactive]).reset_index(drop=True)
     seen_smiles = set(out.lig_smiles)
     to_add = tot_len - len(out)
