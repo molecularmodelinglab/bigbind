@@ -4,7 +4,7 @@ Here lies the code for generating the BigBind Dataset. I've also documented the 
 
 ## Dataset contents
 
-If you download the dataset [here]([https://bigbind.mml.unc.edu/BigBindV1.tar.bz2](https://storage.googleapis.com/bigbind/BigBindV1.tar.bz2)) and extract it, you'll find the following directory structure:
+If you download the dataset [here](https://storage.googleapis.com/bigbind/BigBindV1.tar.bz2) and extract it, you'll find the following directory structure:
 
 ```
 BidBindV1
