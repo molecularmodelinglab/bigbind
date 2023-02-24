@@ -200,8 +200,7 @@ def filter_activities(cfg, activities_unfiltered):
         st_types = [ r.standard_type for r in rows ]
         pchembl_values = [ r.pchembl_value for r in rows ]
         
-        # todo: remove. just taking the median for the thing I'm sending to Paul
-
+        
         final_pchembl = np.median(pchembl_values)
         final_st_type = "mixed"
         final_nM = 10**(9-final_pchembl)
@@ -530,6 +529,7 @@ def filter_uniprots(cfg, uniprot2pockets, pocket2uniprots):
     print(f"Found {len(filtered_pockets)} pockets with valid proteins out of {len(pocket2uniprots)} (Success rate {100*len(filtered_pockets)/len(pocket2uniprots)}%)")
     return filtered_uniprots, filtered_pockets
     
+# todo: 7.5 angstrom cutoff, only heavy atoms
 @cache
 def save_all_structures(cfg,
                         final_pockets,
