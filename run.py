@@ -311,7 +311,7 @@ def get_smiles_to_mol(cfg, activities):
 
 
 
-def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True, filename=None):
+def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False, filename=None, ret_mol=False):
 
     periodic_table = Chem.GetPeriodicTable()
     
@@ -322,6 +322,7 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True, filename=N
     if cfg["cache"] and "save_mol_sdf" not in cfg["recalc"]:
         if os.path.exists(filename):
             return True
+
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
 
     if mol.GetNumAtoms() < min_atoms_in_mol: 
@@ -364,6 +365,10 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True, filename=N
 
     writer = Chem.SDWriter(filename)
     writer.write(mol)
+    writer.close()
+
+    if ret_mol:
+        return next(Chem.SDMolSupplier(filename, sanitize=True))
 
     return True
         
@@ -575,11 +580,17 @@ def save_all_structures(cfg,
             my_ligfile2lig[out_file] = lig
             writer = Chem.SDWriter(out_file)
             writer.write(lig)
+            writer.close()
 
             uff_filename = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + "_uff.sdf"
-            if os.path.exists(uff_filename):
-                my_ligfile2uff_lig[out_file] = uff_filename
-            elif save_mol_sdf(cfg, None, Chem.MolToSmiles(lig), filename=uff_filename):
+            # if os.path.exists(uff_filename):
+            #     my_ligfile2uff_lig[out_file] = uff_filename
+            uff = save_mol_sdf(cfg, None, Chem.MolToSmiles(lig), filename=uff_filename, ret_mol=True)
+            if uff:
+                uff_noh = Chem.RemoveHs(uff)
+                if Chem.MolToSmiles(uff_noh, isomericSmiles=False) != Chem.MolToSmiles(lig, isomericSmiles=False):
+                    print(f"Error saving uff for {out_file}")
+                    my_ligfile2uff_lig[out_file] = "none"
                 my_ligfile2uff_lig[out_file] = uff_filename
             else:
                 my_ligfile2uff_lig[out_file] = "none"

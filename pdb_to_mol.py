@@ -104,6 +104,8 @@ def mol_from_pdb(pdb_file, comp_dict):
     name2pdb_atom = {}
     points = []
 
+    obabel_bonds = defaultdict(lambda: defaultdict(int))
+
     with open(pdb_file, "r") as f:
         for line in f:
             if line.startswith("ATOM") or line.startswith("HETATM"):
@@ -142,13 +144,19 @@ def mol_from_pdb(pdb_file, comp_dict):
             elif line.startswith("CONECT") and code == "UNL":
                 idx1 = int(line[6:11]) - 1
                 idx2_counts = defaultdict(int)
-                for idx2 in [line[11:16], line[16:21], line[21:26], line[26:31]]:
-                    if idx2.strip() == '': continue
-                    idx2_counts[int(idx2) - 1] += 1
-                for idx2, count in idx2_counts.items():
-                    order = [Chem.BondType.SINGLE, Chem.BondType.DOUBLE, Chem.BondType.TRIPLE][count-1]
-                    if mol.GetBondBetweenAtoms(idx1, idx2) is None:
-                        mol.AddBond(idx1, idx2, order)    
+                for idx2_str in [line[11:16], line[16:21], line[21:26], line[26:31]]:
+                    if idx2_str.strip() == '': continue
+                    idx2 = int(idx2_str)-1
+                    obabel_bonds[idx1][idx2] += 1
+                    
+    seen = set()
+    for idx1 in list(obabel_bonds.keys()):
+        for idx2 in obabel_bonds[idx1].keys():
+            if (idx2, idx1) in seen: continue
+            count = max(obabel_bonds[idx1][idx2], obabel_bonds[idx2][idx1])
+            order = [Chem.BondType.SINGLE, Chem.BondType.DOUBLE, Chem.BondType.TRIPLE][count-1]
+            mol.AddBond(idx1, idx2, order)
+            seen.add((idx1, idx2))
                     
     for pdb_bond in pdb_mol.bonds:
         if pdb_bond.atom1 in name2idx and pdb_bond.atom2 in name2idx:
