@@ -28,6 +28,8 @@ from copy import deepcopy
 from Bio.PDB import PDBParser, PDBIO, Select
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
+from pdb_to_mol import load_components_dict, mol_from_pdb
+
 RDLogger.DisableLog('rdApp.*')
 
 from pdb_ligand import get_lig_url, save_pockets
@@ -307,13 +309,16 @@ def get_smiles_to_mol(cfg, activities):
         ret[smiles] = mol
     return ret
 
-def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
+
+
+def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True, filename=None):
 
     periodic_table = Chem.GetPeriodicTable()
     
-    folder = cfg["bigbind_folder"] + "/chembl_structures"
-    os.makedirs(folder, exist_ok=True)
-    filename = folder + "/" + name + ".sdf"
+    if filename is None:
+        folder = cfg["bigbind_folder"] + "/chembl_structures"
+        os.makedirs(folder, exist_ok=True)
+        filename = folder + "/" + name + ".sdf"
     if cfg["cache"] and "save_mol_sdf" not in cfg["recalc"]:
         if os.path.exists(filename):
             return True
@@ -500,24 +505,30 @@ def get_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
     return lig
 
 @cache
-def get_all_ligs(cfg, lig_sdfs, rigorous=False, verbose=False):
+def get_all_ligs(cfg, comp_dict, lig_sdfs, rigorous=False, verbose=False):
     """ Returns a dict mapping ligand files to ligand mol objects """
     lf_errors = []
     ret = {}
     for lf, sdf in tqdm(lig_sdfs.items()):
         try:
-            ret[lf] = get_lig(cfg, lf.replace("/", "_"), lf, sdf)
+            ret[lf] = mol_from_pdb(lf, comp_dict)
+            # ret[lf] = get_lig(cfg, lf.replace("/", "_"), lf, sdf)
         except KeyboardInterrupt:
             raise
         except:
-            if verbose:
-                print(f"Error in {lf}")
-            if rigorous:
+            try:
+                ret[lf] = get_lig(cfg, lf.replace("/", "_"), lf, sdf)
+            except KeyboardInterrupt:
                 raise
-            else:
+            except:
                 if verbose:
-                    print_exc()
-                lf_errors.append(lf)
+                    print(f"Error in {lf}")
+                if rigorous:
+                    raise
+                else:
+                    if verbose:
+                        print_exc()
+                    lf_errors.append(lf)
     print(f"Successfully obtained {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/len(lig_sdfs))*100}%)")
     return ret
 
@@ -543,8 +554,9 @@ def save_all_structures(cfg,
     my_pocket2recs = defaultdict(set)
     my_pocket2ligs = defaultdict(set)
     my_ligfile2lig = {}
+    my_ligfile2uff_lig = {}
     
-    for pocket in tqdm(final_pockets):
+    for pocket in tqdm(pocket2uniprots): # tqdm(final_pockets):
         out_folder = cfg["bigbind_folder"] + "/" + pocket
         
         recfiles = pocket2recs[pocket]
@@ -564,13 +576,21 @@ def save_all_structures(cfg,
             writer = Chem.SDWriter(out_file)
             writer.write(lig)
 
+            uff_filename = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + "_uff.sdf"
+            if os.path.exists(uff_filename):
+                my_ligfile2uff_lig[out_file] = uff_filename
+            elif save_mol_sdf(cfg, None, Chem.MolToSmiles(lig), filename=uff_filename):
+                my_ligfile2uff_lig[out_file] = uff_filename
+            else:
+                my_ligfile2uff_lig[out_file] = "none"
+
         if len(ligs):
             for recfile in recfiles:
                 out_file = out_folder + "/" + recfile.split("/")[-1]
                 my_pocket2recs[pocket].add(out_file)
                 shutil.copyfile(recfile, out_file)
 
-    return my_pocket2recs, my_pocket2ligs, my_ligfile2lig
+    return my_pocket2recs, my_pocket2ligs, my_ligfile2lig, my_ligfile2uff_lig
 
 @cache
 def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
@@ -621,81 +641,64 @@ def create_struct_df(cfg,
                      pocket2recs,
                      pocket2ligs,
                      ligfile2lig,
+                     ligfile2uff,
                      rec2pocketfile,
                      rec2res_num,
                      pocket_centers,
                      pocket_sizes):
     """ Creates the dataframe from all the struct data we have """
-    lig_smiles_series = []
-    ligfile_series = []
-    lig_pdb_series = []
-    pocket_series = []
-    recfile_series = []
-    rec_pocket_file_series = []
-    rec_pdb_series = []
-    pocket_residue_series = []
-    center_series = []
-    bounds_series = []
+
+    df_list = []
+
     for pocket, ligfiles in tqdm(pocket2ligs.items()):
         recfiles = pocket2recs[pocket]
         rec_pdb2rec = { recfile.split("/")[-1].split("_")[0]: recfile for recfile in recfiles }
         current_rec_pdbs = set(rec_pdb2rec.keys())
         for ligfile in ligfiles:
+            lig_uff_file = ligfile2uff[ligfile]
             lig_pdb = ligfile.split("/")[-1].split("_")[0]
             lig = ligfile2lig[ligfile]
             smiles = Chem.MolToSmiles(lig)
             
+            # smh sometimes crossdocked has the ligand pdb but not the associated rec pdb
+            if lig_pdb not in rec_pdb2rec: continue
+
+            redock_pdb = lig_pdb
             if len(current_rec_pdbs) > 1:
-                rec_pdb = random.choice(list(current_rec_pdbs - { lig_pdb }))
+                crossdock_pdb = random.choice(list(current_rec_pdbs - { lig_pdb }))
             else:
-                # we only do re-docking if there are no structures to
-                # crossdock to
-                rec_pdb = next(iter(current_rec_pdbs))
-            # lol doesn't work cuz some receptors have multiple ligands
-            # bound to the same site...
-            # current_rec_pdbs = current_rec_pdbs - { rec_pdb }
-            recfile = rec_pdb2rec[rec_pdb]
-            rec_pocket_file = rec2pocketfile[recfile]
-            poc_res_num = rec2res_num[recfile]
+                crossdock_pdb = "none"
+
+            cur_row = {
+                "pdb": lig_pdb,
+                "pocket": pocket,
+                "lig_smiles": smiles,
+                "lig_crystal_file": "/".join(ligfile.split("/")[-2:]),
+                "lig_uff_file": "/".join(lig_uff_file.split("/")[-2:]),
+            }
+            df_list.append(cur_row)
+
+            for prefix, rec_pdb in (("redock", redock_pdb), ("crossdock", crossdock_pdb)):
+                recfile = rec_pdb2rec[rec_pdb] if rec_pdb != "none" else "none"
+                rec_pocket_file = rec2pocketfile[recfile] if rec_pdb != "none" else "none"
+                cur_row[f"{prefix}_rec_file"] = "/".join(recfile.split("/")[-2:]) if rec_pdb != "none" else "none"
+                cur_row[f"{prefix}_rec_pocket_file"] = "/".join(rec_pocket_file.split("/")[-2:]) if rec_pdb != "none" else "none"
+                cur_row[f"{prefix}_num_pocket_residues"] = rec2res_num[recfile] if rec_pdb != "none" else 0
+
             center = pocket_centers[pocket]
             bounds = pocket_sizes[pocket]
+            for name, num in zip("xyz", [0,1,2]):
+                cur_row[f"pocket_center_{name}"] = center[num]
+            for name, num in zip("xyz", [0,1,2]):
+                cur_row[f"pocket_size_{name}"] = bounds[num]
 
-            lig_smiles_series.append(smiles)
-            ligfile_series.append("/".join(ligfile.split("/")[-2:]))
-            lig_pdb_series.append(lig_pdb)
-            pocket_series.append(pocket)
-            recfile_series.append("/".join(recfile.split("/")[-2:]))
-            rec_pdb_series.append(rec_pdb)
-            rec_pocket_file_series.append(("/".join(rec_pocket_file.split("/")[-2:])))
-            pocket_residue_series.append(poc_res_num)
-            center_series.append(center)
-            bounds_series.append(bounds)
-
-    center_series = np.array(center_series)
-    bounds_series = np.array(bounds_series)
-
-    df_dict = {
-        "lig_smiles": lig_smiles_series,
-        "lig_file": ligfile_series,
-        "lig_pdb": lig_pdb_series,
-        "pocket": pocket_series,
-        "ex_rec_file": recfile_series,
-        "ex_rec_pdb": rec_pdb_series,
-        "ex_rec_pocket_file": rec_pocket_file_series,
-        "num_pocket_residues": pocket_residue_series
-    }
-    for name, num in zip("xyz", [0,1,2]):
-        df_dict[f"pocket_center_{name}"] = center_series[:,num]
-    for name, num in zip("xyz", [0,1,2]):
-        df_dict[f"pocket_size_{name}"] = bounds_series[:,num]
-            
-    return pd.DataFrame(df_dict)
+    return pd.DataFrame(df_list)
 
 max_pocket_size = 42
 max_pocket_residues = 5
 @cache
 def filter_struct_df(cfg, struct_df):
-    return struct_df.query("num_pocket_residues >= @max_pocket_residues and lig_pdb != ex_rec_pdb and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+    return struct_df.query("lig_uff_file != 'none' and redock_num_pocket_residues >= @max_pocket_residues and crossdock_num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
 
 @cache
 def filter_act_df_final(cfg, act_df):
@@ -752,6 +755,31 @@ def get_lit_pcba_pockets(cfg, con, uniprot2pockets):
             pcba_pockets = pcba_pockets.union(uniprot2pockets[uniprot])
         targ2pockets[target] = pcba_pockets
     return targ2pockets
+
+@cache
+def get_v2_splits(cfg, clusters, lit_pcba_pockets):
+    all_pcba_pockets = set().union(*lit_pcba_pockets.values())
+    with open("v1_splits.pkl", "rb") as f:
+        splits = pickle.load(f)
+    for cluster in clusters:
+        cur_splits = set()
+        for split, pockets in splits.items():
+            if len(pockets.intersection(cluster)):
+                cur_splits.add(split)
+
+        if len(cur_splits) > 1:
+            continue
+
+        if len(cluster.intersection(all_pcba_pockets)) > 0:
+            assert "train" not in cur_splits and "val" not in cur_splits
+            cur_split = "test"
+        else:
+            cur_split = "train" if len(cur_splits) == 0 else next(iter(cur_splits))
+
+
+        for pocket in cluster:
+            splits[cur_split].add(pocket)
+    return splits
 
 @cache
 def get_splits(cfg, clusters, lit_pcba_pockets, val_test_frac=0.1):
@@ -924,29 +952,24 @@ def run(cfg):
                                                     uniprot2pockets,
                                                     pocket2uniprots)
     
+
+    comp_dict = load_components_dict(cfg)
+    
     lig_sdfs = download_all_lig_sdfs(cfg, uniprot2ligs)
-    ligfile2lig = get_all_ligs(cfg, lig_sdfs)
+    ligfile2lig = get_all_ligs(cfg, comp_dict, lig_sdfs)
     pocket2recs,\
     pocket2ligs,\
-    ligfile2lig = save_all_structures(cfg,
+    ligfile2lig,\
+    ligfile2uff = save_all_structures(cfg,
                                       final_pockets,
                                       pocket2uniprots,
                                       pocket2recs,
                                       pocket2ligs,
                                       ligfile2lig)
 
+
     rec2pocketfile, rec2res_num = save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig)
     pocket_centers, pocket_sizes = get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig)
-
-    struct_df = create_struct_df(cfg,
-                                 pocket2recs,
-                                 pocket2ligs,
-                                 ligfile2lig,
-                                 rec2pocketfile,
-                                 rec2res_num,
-                                 pocket_centers,
-                                 pocket_sizes)
-    struct_df = filter_struct_df(cfg, struct_df)
 
     # probis stuff
     
@@ -957,10 +980,21 @@ def run(cfg):
     srf2nosql = find_all_probis_distances(cfg, pocket2rep_rec, rec2srf)
     full_scores = convert_inter_results_to_json(cfg, rec2srf, srf2nosql)
 
+    struct_df = create_struct_df(cfg,
+                                 pocket2recs,
+                                 pocket2ligs,
+                                 ligfile2lig,
+                                 ligfile2uff,
+                                 rec2pocketfile,
+                                 rec2res_num,
+                                 pocket_centers,
+                                 pocket_sizes)
+    struct_df = filter_struct_df(cfg, struct_df)
+
     # cluster and save everything
     lit_pcba_pockets = get_lit_pcba_pockets(cfg, con, uniprot2pockets)
     clusters = get_clusters(cfg, pocket2rep_rec, full_scores)
-    splits = get_splits(cfg, clusters, lit_pcba_pockets)
+    splits = get_v2_splits(cfg, clusters, lit_pcba_pockets)
 
     save_clustered_structs(cfg, struct_df, splits)
 

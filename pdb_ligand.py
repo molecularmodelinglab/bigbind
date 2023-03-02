@@ -11,7 +11,7 @@ from tqdm import tqdm
 import numpy as np
 import scipy.spatial as spa
 
-from Bio.PDB import get_surface, PDBParser, ShrakeRupley, PDBIO, Select
+from Bio.PDB import PDBParser, PDBIO, Select
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
 def to_elem(s):
@@ -52,14 +52,14 @@ biopython_parser = PDBParser()
 def get_lig_url(lig_file):
     pdb_id = lig_file.split("/")[-1].split("_")[0]
     with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=PDBConstructionWarning)
-            struct = biopython_parser.get_structure('random_id', lig_file)
-            rec = struct[0]
-            chain = next(iter(rec))
-            asym_id = chain.id
-            res = next(iter(chain))
-            seq_id = res.id[1]
-            return f"https://models.rcsb.org/v1/{pdb_id}/ligand?auth_seq_id={seq_id}&auth_asym_id={asym_id}&encoding=sdf&filename=lig.sdf"
+        warnings.filterwarnings("ignore", category=PDBConstructionWarning)
+        struct = biopython_parser.get_structure('random_id', lig_file)
+        rec = struct[0]
+        chain = next(iter(rec))
+        asym_id = chain.id
+        res = next(iter(chain))
+        seq_id = res.id[1]
+        return f"https://models.rcsb.org/v1/{pdb_id}/ligand?auth_seq_id={seq_id}&auth_asym_id={asym_id}&encoding=sdf&filename=lig.sdf"
 
 def save_pockets(rec_files, ligs, lig_dist_cutoff):
 
