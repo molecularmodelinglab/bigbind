@@ -19,9 +19,7 @@ fi
 unset __conda_setup
 # <<< conda initialize <<<
 
-module load gcc/11.2.0
-module load cuda/11.8
-conda activate plantain-nightly
+conda activate chem-py3.9
 
 cd /nas/longleaf/home/mixarcid/bigbind
 
