@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -J tanimoto_matrix
 #SBATCH -t 5-00:00:00
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=32G
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
