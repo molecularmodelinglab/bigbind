@@ -12,7 +12,7 @@ from cache import cache
 
 
 @cache
-def get_morgan_fps(cfg, df, radius=4, bits=1024):
+def get_morgan_fps(cfg, df, radius=3, bits=2048):
     fps = []
     for smi in tqdm(df.lig_smiles):
         mol = Chem.MolFromSmiles(smi)
@@ -21,7 +21,7 @@ def get_morgan_fps(cfg, df, radius=4, bits=1024):
     fps = np.asarray(fps)
 
 
-def get_fp(smi, radius=4, bits=1024):
+def get_fp(smi, radius=4, bits=2048):
     mol = Chem.MolFromSmiles(smi)
     fp = AllChem.GetMorganFingerprintAsBitVect(mol, useChirality=True, radius=radius, nBits=bits)
     return np.array(fp, dtype=bool)
