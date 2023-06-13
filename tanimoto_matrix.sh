@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH -J tanimoto_matrix
 #SBATCH -t 2-00:00:00
-#SBATCH --partition=gpu
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=16G
 
