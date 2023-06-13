@@ -39,6 +39,13 @@ from sna import *
 
 import signal
 
+def canonicalize(mol):
+
+    order = tuple(zip(*sorted([(j, i) for i, j in enumerate(Chem.CanonicalRankAtoms(mol))])))[1]
+    mol = Chem.RenumberAtoms(mol, list(order))
+
+    return mol
+
 class timeout:
     def __init__(self, seconds, error_message='Timeout'):
         self.seconds = seconds
@@ -552,9 +559,13 @@ def save_all_structures(cfg,
                         pocket2uniprots,
                         pocket2recs,
                         pocket2ligs,
-                        ligfile2lig):
+                        ligfile2lig,
+                        folder=None):
     """ Saves the pdb receptor and sdf ligand files. Returns new
     dicts that use _those_ filename instead of crossdocked's """
+
+    if folder is None:
+        folder = cfg["bigbind_folder"]
 
     my_pocket2recs = defaultdict(set)
     my_pocket2ligs = defaultdict(set)
@@ -562,7 +573,7 @@ def save_all_structures(cfg,
     my_ligfile2uff_lig = {}
     
     for pocket in tqdm(pocket2uniprots): # tqdm(final_pockets):
-        out_folder = cfg["bigbind_folder"] + "/" + pocket
+        out_folder = folder + "/" + pocket
         
         recfiles = pocket2recs[pocket]
         ligfiles = pocket2ligs[pocket]
@@ -587,11 +598,13 @@ def save_all_structures(cfg,
             #     my_ligfile2uff_lig[out_file] = uff_filename
             uff = save_mol_sdf(cfg, None, Chem.MolToSmiles(lig), filename=uff_filename, ret_mol=True)
             if uff:
-                uff_noh = Chem.RemoveHs(uff)
-                if Chem.MolToSmiles(uff_noh, isomericSmiles=False) != Chem.MolToSmiles(lig, isomericSmiles=False):
+                uff_noh = canonicalize(Chem.RemoveHs(uff))
+                lig_noh = canonicalize(Chem.RemoveHs(lig))
+                if Chem.MolToSmiles(uff_noh, isomericSmiles=False) != Chem.MolToSmiles(lig_noh, isomericSmiles=False):
                     print(f"Error saving uff for {out_file}")
                     my_ligfile2uff_lig[out_file] = "none"
-                my_ligfile2uff_lig[out_file] = uff_filename
+                else:
+                    my_ligfile2uff_lig[out_file] = uff_filename
             else:
                 my_ligfile2uff_lig[out_file] = "none"
 
@@ -708,8 +721,34 @@ def create_struct_df(cfg,
 max_pocket_size = 42
 max_pocket_residues = 5
 @cache
-def filter_struct_df(cfg, struct_df):
-    return struct_df.query("lig_uff_file != 'none' and redock_num_pocket_residues >= @max_pocket_residues and crossdock_num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+def filter_struct_df(cfg, struct_df, folder=None):
+    if folder is None:
+        folder = cfg["bigbind_folder"] 
+    
+    struct_df = struct_df.query("lig_uff_file != 'none' and redock_num_pocket_residues >= @max_pocket_residues and crossdock_num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+    mask = []
+    for i, row in tqdm(struct_df.iterrows(), total=len(struct_df)):
+        uff_file = folder + "/" + row.lig_uff_file
+        if not os.path.exists(uff_file):
+            print("UFF FILE DOESNT EXIST")
+            mask.append(False)
+            continue
+
+        lig = next(Chem.SDMolSupplier(uff_file, sanitize=True))
+        lig = Chem.RemoveHs(lig)
+
+        uff_smiles = Chem.MolToSmiles(lig, False)
+        reg_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(row.lig_smiles), False)
+
+        if uff_smiles != reg_smiles:
+            print("UFF FILE GOT SMILES WRONG")
+            mask.append(False)
+            continue
+
+        mask.append(True)
+    
+    struct_df = struct_df[mask].reset_index(drop=True)
+    return struct_df
 
 @cache
 def filter_act_df_final(cfg, act_df):
@@ -910,11 +949,13 @@ def make_final_activities_df(cfg,
     return new_act
 
 @cache
-def save_clustered_structs(cfg, struct_df, splits):
-    struct_df.to_csv(cfg["bigbind_folder"] + "/structures_all.csv", index=False)
+def save_clustered_structs(cfg, struct_df, splits, folder=None):
+    if folder is None:
+        folder = cfg["bigbind_folder"] 
+    struct_df.to_csv(folder + "/structures_all.csv", index=False)
     for split, pockets in splits.items():
         split_struct = struct_df.query("pocket in @pockets").reset_index(drop=True)
-        split_struct.to_csv(cfg["bigbind_folder"] + f"/structures_{split}.csv", index=False)
+        split_struct.to_csv(folder + f"/structures_{split}.csv", index=False)
 
 @cache
 def save_clustered_activities(cfg, activities, splits):
@@ -1028,7 +1069,7 @@ def run(cfg):
     save_all_sna_dfs(cfg, big_clusters, smiles2filename)
     save_all_screen_dfs(cfg, big_clusters, smiles2filename)
 
-    tarball_everything(cfg)
+    # tarball_everything(cfg)
 
 SEED = 49
 random.seed(SEED)
