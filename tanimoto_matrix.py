@@ -41,20 +41,27 @@ def batch_tanimoto(fp, fps):
     sims = inter.sum(-1)/union.sum(-1)
     return sims
 
+def get_bytes(a):
+    return a.data.nbytes + a.row.nbytes + a.col.nbytes
+
 def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, idx):
     fp_shm = shared_memory.SharedMemory(name=fp_shm_name)
     fps = np.ndarray(fp_shape, dtype=bool, buffer=fp_shm.buf)
 
     fp_sum_shm = shared_memory.SharedMemory(name=fp_sum_shm_name)
-    fp_sum = np.ndarray(fp_sum_shape, dtype=bool, buffer=fp_sum_shm.buf)
+    fp_sum = np.ndarray(fp_sum_shape, dtype=int, buffer=fp_sum_shm.buf)
 
     fp = fps[idx]
     inter = np.logical_and(fp, fps)
     inter_sum = inter.sum(-1)
     sims = inter_sum/(fp_sum + fp.sum() - inter_sum)
 
+    # print(idx, (sims < 0.2).sum()/len(sims))
+
     sims[sims < 0.2] = 0.0
-    ssim = sparse.csc_matrix(sims)
+    ssim = sparse.coo_matrix(sims)
+
+    # print(ssim.data.shape, get_bytes(ssim))
 
     return ssim
 
@@ -68,7 +75,7 @@ def get_tanimoto_matrix(cfg, fps):
         fps_shared[:] = fps[:]
         
         fp_sum_shm = shared_memory.SharedMemory(create=True, size=fp_sum.nbytes)
-        fp_sum_shared = np.ndarray(fp_sum.shape, dtype=bool, buffer=fp_sum_shm.buf)
+        fp_sum_shared = np.ndarray(fp_sum.shape, dtype=int, buffer=fp_sum_shm.buf)
         fp_sum_shared[:] = fp_sum[:]
 
         sim_func = partial(batch_tanimoto_faster, fps.shape, fp_shm.name, fp_sum.shape, fp_sum_shm.name)
