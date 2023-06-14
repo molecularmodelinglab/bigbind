@@ -58,7 +58,7 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
 
     # print(idx, (sims < 0.2).sum()/len(sims))
 
-    sims[sims < 0.2] = 0.0
+    sims[sims < 0.4] = 0.0
     ssim = sparse.coo_matrix(sims)
 
     # print(ssim.data.shape, get_bytes(ssim))
