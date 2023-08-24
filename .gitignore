@@ -13,6 +13,8 @@ logs
 *.json
 *.out
 *.err
+*.smi
+*.pkl
 
 notebooks
 outputs
