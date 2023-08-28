@@ -17,9 +17,11 @@ def transfer_git(host):
 
     # back to og branch
     subprocess.run(f"git symbolic-ref HEAD refs/heads/{cur_branch} && git reset", shell=True)
+    subprocess.run(f"git branch -D {new_branch}")
 
     # copy over hosts file
-    subprocess.run(f"scp configs/hosts.yaml {host.user}@{host.hostname}:{host.repo_dir}/configs/hosts.yaml")
+    subprocess.run(f"ssh -t {host.user}@{host.hostname} mkdir -p {host.repo_dir}/configs", shell=True)
+    subprocess.run(f"scp configs/hosts.yaml {host.user}@{host.hostname}:{host.repo_dir}/configs/hosts.yaml", shell=True)
 
 def remote_run(host):
     remote_cmds = []
@@ -29,7 +31,7 @@ def remote_run(host):
     remote_cmds.append("echo 'hello world'")
     cmd = f"ssh -t {host.user}@{host.hostname} {'&&'.join(remote_cmds)}"
     print(f"Running {cmd}")
-    subprocess.run(cmd)
+    subprocess.run(cmd, shell=True)
 
 if __name__ == "__main__":
     cfg = OmegaConf.load("configs/hosts.yaml")
