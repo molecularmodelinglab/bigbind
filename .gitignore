@@ -16,5 +16,7 @@ logs
 *.smi
 *.pkl
 
+configs/hosts.yaml
+
 notebooks
 outputs
