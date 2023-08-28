@@ -17,7 +17,7 @@ def transfer_git(host):
 
     # back to og branch
     subprocess.run(f"git symbolic-ref HEAD refs/heads/{cur_branch} && git reset", shell=True)
-    subprocess.run(f"git branch -D {new_branch}")
+    subprocess.run(f"git branch -D {new_branch}", shell=True)
 
     # copy over hosts file
     subprocess.run(f"ssh -t {host.user}@{host.hostname} mkdir -p {host.repo_dir}/configs", shell=True)
