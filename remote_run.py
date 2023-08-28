@@ -18,7 +18,21 @@ def transfer_git(host):
     # back to og branch
     subprocess.run(f"git symbolic-ref HEAD refs/heads/{cur_branch} && git reset", shell=True)
 
+    # copy over hosts file
+    subprocess.run(f"scp configs/hosts.yaml {host.user}@{host.hostname}:{host.repo_dir}/configs/hosts.yaml")
+
+def remote_run(host):
+    remote_cmds = []
+    if "pre_command" in host:
+        remote_cmds.append(host.pre_command)
+    remote_cmds.append(f"cd {host.repo_dir}")
+    remote_cmds.append("echo 'hello world'")
+    cmd = f"ssh -t {host.user}@{host.hostname} {'&&'.join(remote_cmds)}"
+    print(f"Running {cmd}")
+    subprocess.run(cmd)
+
 if __name__ == "__main__":
     cfg = OmegaConf.load("configs/hosts.yaml")
     host = cfg.unc_data
     transfer_git(host)
+    remote_run(host)
