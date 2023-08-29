@@ -7,3 +7,5 @@ biopython
 biopandas
 scipy
 uniprot
+fabric
+termcolor

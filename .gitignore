@@ -6,7 +6,6 @@
 !*/.gitkeep
 *.out
 *.err
-cfg.yaml
 logs
 
 *.pdb

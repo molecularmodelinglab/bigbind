@@ -1,5 +1,10 @@
 from omegaconf import OmegaConf
 import subprocess
+import os
+import sys
+
+# in general, this code is hacky. Should use fabric instead of constant
+# subprocess ssh runs
 
 def get_cur_branch():
     # get current branch name
@@ -13,6 +18,7 @@ def transfer_git(host):
     try:
         cur_branch = get_cur_branch()
         # make sure remote ain't in the transfer branch
+        # todo: use thr primary branch name, not cur_branch
         subprocess.run(f"ssh -t {host.user}@{host.hostname} 'cd {host.repo_dir} && git checkout {cur_branch}'", shell=True)
 
         # push to remote
@@ -30,21 +36,30 @@ def transfer_git(host):
         subprocess.run(f"git symbolic-ref HEAD refs/heads/{cur_branch} && git reset", shell=True)
         subprocess.run(f"git branch -D {new_branch}", shell=True)
 
-def remote_run(host, host_name, func_name, hostname_key="hostname"):
+def remote_run(host, host_name, task_name, hostname_key="hostname"):
+
+    log_dir = os.path.join(host.work_dir, "logs")
+    out_file = os.path.join(log_dir, task_name + ".out")
+    err_file = os.path.join(log_dir, task_name + ".err")
+
     remote_cmds = []
     if "pre_command" in host:
         remote_cmds.append(host.pre_command)
+    remote_cmds.append("echo 'Starting setup'")
     remote_cmds.append(f"cd {host.repo_dir}")
-    remote_cmds.append(f"nohup python -m local_run {host_name} {func_name} 1>/dev/null 2>/dev/null &")
-    cmd = f"printf '{' ; '.join(remote_cmds)} exit' | ssh {host.user}@{host[hostname_key]}"
+    remote_cmds.append("pip install -r requirements.txt")
+    remote_cmds.append("echo 'Ending setup. Starting task'")
+    remote_cmds.append(f"python -m local_run {host_name} {task_name}")
+
+    cmd = f"echo 'mkdir -p {log_dir} && nohup bash -c \"{' && '.join(remote_cmds)}\" 1> {out_file} 2> {err_file} &' | ssh {host.user}@{host[hostname_key]}"
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True)
 
 if __name__ == "__main__":
     cfg = OmegaConf.load("configs/hosts.yaml")
     host_name = "longleaf"
-    func_name = "test_f"
+    task_name = sys.argv[1]
     host = cfg[host_name]
-    transfer_git(host)
 
-    remote_run(host, host_name, func_name, 'network_hostname')
+    transfer_git(host)
+    remote_run(host, host_name, task_name, 'network_hostname')
