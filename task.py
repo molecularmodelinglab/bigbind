@@ -41,13 +41,18 @@ class Task:
         except OSError:
             return False
 
-    def full_run(self, cfg):
+    def full_run(self, cfg, force=False):
         """ Checks to see if we already ran it -- if so, we're good!"""
-        if self.is_finished(cfg):
-            print(f"Using cached data from {self.name}")
-            return
-        self.run(cfg)
+
         completed_filename = self.get_completed_filename(cfg)
+
+        if self.is_finished(cfg):
+            if force:
+                os.remove(completed_filename)
+            else:
+                print(f"Using cached data from {self.name}")
+                return
+        self.run(cfg)
         dir = os.path.dirname(completed_filename)
         os.makedirs(dir, exist_ok=True)
         with open(completed_filename, "w") as f:

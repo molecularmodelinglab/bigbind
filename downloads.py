@@ -23,4 +23,4 @@ class StaticDownloadTask(Task):
 
 download_chembl = StaticDownloadTask("download_chembl", "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_33_mysql.tar.gz")
 download_sifts = StaticDownloadTask("download_sifts", "ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/pdb_chain_uniprot.csv.gz")
-download_crossdocked = StaticDownloadTask("download_crossdocked", "https://console.cloud.google.com/storage/browser/_details/plantain_data/CrossDocked2022.tar.gz?project=research-380112")
+download_crossdocked = StaticDownloadTask("download_crossdocked", "https://storage.googleapis.com/plantain_data/CrossDocked2022.tar.gz")
