@@ -1,19 +1,34 @@
 from functools import wraps
 import os
+from typing import List, Dict, Any
+
+class WorkNode:
+    
+    task: "Task"
+    args: List[Any]
+    kwargs: Dict[str, Any]
+
+    def __init__(self, task, args, kwargs):
+        self.task = task
+        self.args = args
+        self.kwargs = kwargs
+
+    def __repr__(self):
+        return f"WorkNode[{self.task.name}]"
 
 class Task:
     ALL_TASKS = {}
 
-    def __init__(self, name, out_filename_rel, _global=True):
+    def __init__(self, name, out_filename_rel, local=False):
         self.name = name
         self._out_filename_rel = out_filename_rel
-        self._global = _global
+        self.local = local
         if self.name in Task.ALL_TASKS:
             raise Exception(f"Trying to define another Task with name {name}")
         Task.ALL_TASKS[self.name] = self
 
     def get_out_folder(self, cfg):
-        prefix = "global" if self._global else "local"
+        prefix = "local" if self.local else "global"
         return os.path.join(cfg.host.work_dir, cfg.run_name, prefix, self.name)
 
     def get_out_filename(self, cfg):
@@ -24,7 +39,7 @@ class Task:
         os.makedirs(dir, exist_ok=True)
         return ret
 
-    def run(self, cfg):
+    def run(self, cfg, *args, **kwargs):
         """ The idea is that run will input the host info (and all
         the input data) and write to the out_filename"""
         raise NotImplementedError
@@ -41,7 +56,7 @@ class Task:
         except OSError:
             return False
 
-    def full_run(self, cfg, force=False):
+    def full_run(self, cfg, args, kwargs, force=False):
         """ Checks to see if we already ran it -- if so, we're good!"""
 
         completed_filename = self.get_completed_filename(cfg)
@@ -51,19 +66,37 @@ class Task:
                 os.remove(completed_filename)
             else:
                 print(f"Using cached data from {self.name}")
-                return
-        self.run(cfg)
+                return self.get_output(cfg)
+        
+        self.run(cfg, *args, **kwargs)
         dir = os.path.dirname(completed_filename)
         os.makedirs(dir, exist_ok=True)
         with open(completed_filename, "w") as f:
             f.write("completed\n")
 
-# class FuncTask:
+        return self.get_output(cfg)
 
-#     def __init__(self, func):
-#         super().__init__(func.__name__)
-#         self.run = func
+    def get_output(self, cfg):
+        """ By default, return the output filename. But subclasses
+        can also load the output file contents as well """
+        return self.get_out_filename(cfg)
 
-# def task(func):
-#     return wraps(func)(FuncTask(func))
+    def __call__(self, *args, **kwargs):
+        """ Lazily create Workflow graph """
+        return WorkNode(self, args, kwargs)
+
+class FileTask(Task):
+    """ Tasks that return nothing but output a particular file"""
+
+    def __init__(self, out_filename_rel, local, func):
+        super().__init__(func.__name__, out_filename_rel, local)
+        self.func = func
+
+    def run(self, cfg, *args, **kwargs):
+        return self.func(cfg, self.get_out_filename(cfg), *args, **kwargs)
+
+def file_task(out_filename_rel, local=False):
+    def wrapper(f):
+        return wraps(f)(FileTask(out_filename_rel, local, f))
+    return wrapper
 

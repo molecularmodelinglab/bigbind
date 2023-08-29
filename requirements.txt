@@ -9,3 +9,4 @@ scipy
 uniprot
 fabric
 termcolor
+networkx

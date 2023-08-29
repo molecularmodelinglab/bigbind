@@ -12,15 +12,10 @@ class StaticDownloadTask(Task):
 
     def __init__(self, name, url):
         rel_out_fname = os.path.basename(url)
-        super().__init__(name, rel_out_fname, False)
+        super().__init__(name, rel_out_fname, local=True)
         self.url = url
 
     def run(self, cfg):
-        # https://stackoverflow.com/questions/16694907/download-large-file-in-python-with-requests
         filename = self.get_out_filename(cfg)
         print(f"Writing to {filename}")
         urllib.request.urlretrieve(self.url, filename)
-
-download_chembl = StaticDownloadTask("download_chembl", "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_33_mysql.tar.gz")
-download_sifts = StaticDownloadTask("download_sifts", "ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/pdb_chain_uniprot.csv.gz")
-download_crossdocked = StaticDownloadTask("download_crossdocked", "https://storage.googleapis.com/plantain_data/CrossDocked2022.tar.gz")
