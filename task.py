@@ -19,10 +19,21 @@ class WorkNode:
 class Task:
     ALL_TASKS = {}
 
-    def __init__(self, name, out_filename_rel, local=False):
+    def __init__(self, name, out_filename_rel, 
+                 local=False,
+                 # slurm stuff
+                 max_runtime=1, # hours
+                 n_cpu=1,
+                 mem=2, # GB
+                 ):
         self.name = name
         self._out_filename_rel = out_filename_rel
         self.local = local
+
+        self.max_runtime = max_runtime
+        self.n_cpu = n_cpu
+        self.mem = mem
+
         if self.name in Task.ALL_TASKS:
             raise Exception(f"Trying to define another Task with name {name}")
         Task.ALL_TASKS[self.name] = self
@@ -48,6 +59,8 @@ class Task:
         return os.path.join(self.get_out_folder(cfg), "completed.txt")
 
     def is_finished(self, cfg):
+        """ Returns true if we can just call get_output directly,
+        using the cached output """
         try:
             completed_filename = self.get_completed_filename(cfg)
             with open(completed_filename, "r") as f:
@@ -88,15 +101,15 @@ class Task:
 class FileTask(Task):
     """ Tasks that return nothing but output a particular file"""
 
-    def __init__(self, out_filename_rel, local, func):
-        super().__init__(func.__name__, out_filename_rel, local)
+    def __init__(self, out_filename_rel, func, *args, **kwargs):
+        super().__init__(func.__name__, out_filename_rel, *args, **kwargs)
         self.func = func
 
     def run(self, cfg, *args, **kwargs):
         return self.func(cfg, self.get_out_filename(cfg), *args, **kwargs)
 
-def file_task(out_filename_rel, local=False):
+def file_task(out_filename_rel, *args, **kwargs):
     def wrapper(f):
-        return wraps(f)(FileTask(out_filename_rel, local, f))
+        return wraps(f)(FileTask(out_filename_rel, f, *args, **kwargs))
     return wrapper
 
