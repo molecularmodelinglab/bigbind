@@ -22,14 +22,14 @@ def submit_slurm_task(cfg, workflow, node):
     sbatch_args.append(f"--error={err_file}")
     sbatch_args = " ".join(sbatch_args)
 
-    run_cmds = []
+    run_cmds = [ f"cd {cfg.host.repo_dir}" ]
     if "pre_command" in cfg.host:
         run_cmds.append(cfg.host.pre_command)
 
     run_cmds.append(f"python local_run.py {cfg.host.name} -n {index}")
     run_cmds = " && ".join(run_cmds)
 
-    cmd = f"echo '#!/bin/bash\n {run_cmds}' | sbatch {sbatch_args}"
+    cmd = f"cd ~ && echo '#!/bin/bash\n {run_cmds}' | sbatch {sbatch_args}"
     print(f" Running {cmd}")
 
     subprocess.run(cmd, shell=True, check=True)
