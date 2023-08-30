@@ -17,6 +17,8 @@ def submit_slurm_task(cfg, workflow, node):
     out_file = os.path.join(log_dir, node.task.name + ".out")
     err_file = os.path.join(log_dir, node.task.name + ".err")
 
+    os.makedirs(log_dir, exist_ok=True)
+
     sbatch_args = []
     sbatch_args.append(f"-J {node.task.name}")
     sbatch_args.append(f"-t {runtime.days:02d}-{int(hours):02}:{int(minutes):02}:{int(seconds):02}")
