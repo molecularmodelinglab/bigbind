@@ -10,8 +10,8 @@ def submit_slurm_task(cfg, workflow, node):
     minutes, seconds = divmod(remainder, 60)
 
     log_dir = os.path.join(cfg.host.work_dir, "logs")
-    out_file = os.path.join(log_dir, task_name + ".out")
-    err_file = os.path.join(log_dir, task_name + ".err")
+    out_file = os.path.join(log_dir, node.task.name + ".out")
+    err_file = os.path.join(log_dir, node.task.name + ".err")
 
     sbatch_args = []
     sbatch_args.append(f"-J {node.task.name}")
