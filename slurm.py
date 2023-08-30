@@ -1,4 +1,5 @@
 from datetime import timedelta
+from tempfile import NamedTemporaryFile
 import subprocess
 
 def submit_slurm_task(cfg, workflow, node):
@@ -15,14 +16,16 @@ def submit_slurm_task(cfg, workflow, node):
     sbatch_args.append(f"--mem={node.task.mem}G")
     sbatch_args = " ".join(sbatch_args)
 
+    # with NamedTemporaryFile("") as 
+
     run_cmds = []
     if "pre_command" in cfg.host:
-        remote_cmds.append(cfg.host.pre_command)
+        run_cmds.append(cfg.host.pre_command)
 
     run_cmds.append(f"python local_run.py {cfg.host.name} -n {index}")
     run_cmds = " && ".join(run_cmds)
 
-    cmd = f"sbatch {sbatch_args} bash -c '{run_cmds}'"
+    cmd = f"echo '#!/bin/bash\n {run_cmds}' | sbatch {sbatch_args}"
     print(f" Running {cmd}")
 
     subprocess.run(cmd, shell=True, check=True)
