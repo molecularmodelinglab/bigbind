@@ -38,4 +38,4 @@ def submit_slurm_task(cfg, workflow, node):
     print(f" Running {cmd}")
 
     result = subprocess.run(cmd, shell=True, check=True, capture_output=True)
-    return sbatch_regex.match(result.stdout).groups()[0]
+    return sbatch_regex.match(result.stdout.decode('utf-8')).groups()[0]
