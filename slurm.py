@@ -1,15 +1,19 @@
 from datetime import timedelta
 import subprocess
+import re
 import os
 
+sbatch_regex = re.compile("Submitted batch job (.+)")
+
 def submit_slurm_task(cfg, workflow, node):
+    """ Submits job to SLURM and returns job id """
     index = workflow.nodes.index(node)
     runtime = timedelta(hours=node.task.max_runtime)
     
     hours, remainder = divmod(runtime.seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
 
-    log_dir = os.path.join(cfg.host.work_dir, "logs")
+    log_dir = os.path.join(cfg.host.work_dir, cfg.run_name, "logs")
     out_file = os.path.join(log_dir, node.task.name + ".out")
     err_file = os.path.join(log_dir, node.task.name + ".err")
 
@@ -33,4 +37,5 @@ def submit_slurm_task(cfg, workflow, node):
     cmd = f"cd ~ && echo '#!/bin/bash\n {run_cmds}' | sbatch {sbatch_args}"
     print(f" Running {cmd}")
 
-    subprocess.run(cmd, shell=True, check=True)
+    result = subprocess.run(cmd, shell=True, check=True, capture_output=True)
+    return sbatch_regex.match(result.stdout).groups()[0]

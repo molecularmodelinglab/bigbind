@@ -22,8 +22,7 @@ def submit_tasks(cfg, workflow, task_names):
 
     for level in workflow.get_levels(final_nodes):
         for node in level:
-            if node.task.is_finished(cfg):
-                continue
+            if not node.can_submit(): continue
             submit_single_task(cfg, workflow, node)
 
 if __name__ == "__main__":

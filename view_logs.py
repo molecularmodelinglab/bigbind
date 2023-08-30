@@ -11,7 +11,7 @@ def print_log(c, sftp, filename, color):
 
 def print_all_logs(cfg, task_name, hostname_key="hostname"):
 
-    log_dir = os.path.join(cfg.host.work_dir, "logs")
+    log_dir = os.path.join(cfg.host.work_dir, cfg.run_name, "logs")
     out_file = os.path.join(log_dir, task_name + ".out")
     err_file = os.path.join(log_dir, task_name + ".err")
 

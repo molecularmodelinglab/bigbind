@@ -1,8 +1,13 @@
 import subprocess
 import os
 from glob import glob
+import sqlite3
+import pandas as pd
+from collections import defaultdict
+from tqdm import tqdm
+
 from workflow import Workflow
-from task import file_task
+from task import file_task, simple_task, task
 from downloads import StaticDownloadTask
 
 # first define all the things we need to download
@@ -34,6 +39,45 @@ def untar_chembl(cfg, out_filename, chembl_filename):
     db_file = glob(os.path.join(out_dir, "chembl_*/chembl_*_sqlite/chembl_*.db"))[0]
     os.rename(db_file, out_filename)
 
+@simple_task
+def get_chembl_con(cfg, chembl_db_file):
+    """ Gets the connection to the chembl sqlite database"""
+    con = sqlite3.connect(chembl_db_file)
+    return con
+
+@simple_task
+def load_sifts_into_chembl(cfg, con, sifts_csv):
+    """ Loads SIFTS into the chembl sqlite database for easy sql queries. Note that
+    this actually modifies the db file itself for caching purposes. Not ideal to have
+    side effects but in this case it can't really hurt anything """
+    sifts_df = pd.read_csv(sifts_csv, comment='#')
+    cursor = con.cursor()
+
+    # no need to insert if table exists
+    cursor.execute(" SELECT count(name) FROM sqlite_master WHERE type='table' AND name='sifts' ")
+    if cursor.fetchone()[0]==1:
+        return con
+    
+    cursor.execute("create table if not exists sifts (pdb text, chain text sp_primary text, res_beg integer, res_end integer, pdb_beg integer, pdb_end integer, sp_beg integer, sp_end integer)")
+    cursor.fetchall()
+
+    sifts_df.to_sql('sifts', con, if_exists='replace', index=False)
+
+    return con
+
+@task(max_runtime=0.1)
+def get_crossdocked_rec_to_ligs(cfg, cd_dir):
+    """ Get the pdb files associated with the crystal rec and lig files.
+    (the crossdocked types file only lists gninatypes files). Returns a
+    dict mapping rec files to a list of lig files that bind to the rec """
+
+    ret = defaultdict(set)
+    for pocket in tqdm(glob(f"{cd_dir}/*")):
+        for rec_file in glob(pocket + "/*_rec.pdb"):
+            for lig_file in glob(pocket + "/*_lig.pdb"):
+                ret[rec_file].add(lig_file)
+    return ret
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -45,13 +89,20 @@ def make_bigbind_workflow():
     chembl_tarred = download_chembl()
     chembl_db_file = untar_chembl(chembl_tarred)
 
-    return Workflow(sifts_csv, cd_dir, chembl_db_file)
+    con = get_chembl_con(chembl_db_file)
+    con = load_sifts_into_chembl(con, sifts_csv)
+
+    cd_rf2lf = get_crossdocked_rec_to_ligs(cd_dir)
+
+    return Workflow(cd_rf2lf)
 
 if __name__ == "__main__":
     from cfg_utils import get_config
     workflow = make_bigbind_workflow()
     cfg = get_config("local")
 
-    cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
-    levels = workflow.get_levels(cd_nodes)
-    print(levels)
+    workflow.run(cfg)
+
+    # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
+    # levels = workflow.get_levels(cd_nodes)
+    # print(levels)

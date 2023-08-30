@@ -1,6 +1,7 @@
 from functools import wraps
 import os
 from typing import List, Dict, Any
+import pickle
 
 class WorkNode:
     
@@ -13,18 +14,38 @@ class WorkNode:
         self.args = args
         self.kwargs = kwargs
 
+    def can_submit(self, cfg):
+        """ Returns true if you can submit the task to e.g. slurm.
+        Returns false when the task has already completed or is simple """
+        if self.task.is_finished(cfg) or self.task.simple:
+            return False
+        return True
+
+    def get_parents(self):
+        """ Returns the immediate parents of the task,
+        from the args and kwargs"""
+        raise NotImplementedError
+
+    def get_all_ancestors(self):
+        """ Returns a list of all the ancestors of the node, excluding
+        all the tasks that can't be submitted """
+        raise NotImplementedError
+
     def __repr__(self):
         return f"WorkNode[{self.task.name}]"
 
 class Task:
     ALL_TASKS = {}
 
-    def __init__(self, name, out_filename_rel, 
+    def __init__(self,
+                 name,
+                 out_filename_rel, 
                  local=False,
                  # slurm stuff
                  max_runtime=1, # hours
                  n_cpu=1,
                  mem=2, # GB
+                 simple=False, # is it so simple you don't need to cache?
                  ):
         self.name = name
         self._out_filename_rel = out_filename_rel
@@ -33,6 +54,8 @@ class Task:
         self.max_runtime = max_runtime
         self.n_cpu = n_cpu
         self.mem = mem
+
+        self.simple = simple
 
         if self.name in Task.ALL_TASKS:
             raise Exception(f"Trying to define another Task with name {name}")
@@ -61,6 +84,8 @@ class Task:
     def is_finished(self, cfg):
         """ Returns true if we can just call get_output directly,
         using the cached output """
+        if self.simple:
+            return False
         try:
             completed_filename = self.get_completed_filename(cfg)
             with open(completed_filename, "r") as f:
@@ -71,6 +96,9 @@ class Task:
 
     def full_run(self, cfg, args, kwargs, force=False):
         """ Checks to see if we already ran it -- if so, we're good!"""
+
+        if self.simple:
+            return self.run(cfg, *args, **kwargs)
 
         completed_filename = self.get_completed_filename(cfg)
 
@@ -92,6 +120,7 @@ class Task:
     def get_output(self, cfg):
         """ By default, return the output filename. But subclasses
         can also load the output file contents as well """
+        assert not self.simple # should never call this on simple task
         return self.get_out_filename(cfg)
 
     def __call__(self, *args, **kwargs):
@@ -113,3 +142,36 @@ def file_task(out_filename_rel, *args, **kwargs):
         return wraps(f)(FileTask(out_filename_rel, f, *args, **kwargs))
     return wrapper
 
+class SimpleTask(Task):
+    """ Tasks that either run very quickly or do their own caching """
+
+    def __init__(self, func):
+        super().__init__(func.__name__, None, simple=True)
+        self.func = func
+
+    def run(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+def simple_task(f):
+    return wraps(f)(SimpleTask(f))
+
+class PickleTask(Task):
+    """ The default task. Saves a pickle of the function output """
+
+    def __init__(self, func, *args, **kwargs):
+        super().__init__(func.__name__, "output.pkl", *args, **kwargs)
+        self.func = func
+
+    def run(self, cfg, *args, **kwargs):
+        ret = self.func(cfg, *args, **kwargs)
+        with open(self.get_out_filename(cfg), "wb") as f:
+            pickle.dump(ret, f)
+
+    def get_output(self, cfg):
+        with open(self.get_out_filename(cfg), "rb") as f:
+            return pickle.load(f)
+
+def task(*args, **kwargs):
+    def wrapper(f):
+        return wraps(f)(PickleTask(f, *args, **kwargs))
+    return wrapper
