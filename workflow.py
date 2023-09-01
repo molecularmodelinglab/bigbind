@@ -3,6 +3,8 @@ from task import Task, WorkNode
 import networkx as nx
 from collections import defaultdict
 from utils import recursive_map
+from traceback import format_exc
+import requests
 
 class Workflow:
 
@@ -28,21 +30,31 @@ class Workflow:
 
     def run_node(self, cfg, node: WorkNode):
         """ Run a single node"""
-        if node in self.node_cache:
-            return self.node_cache[node]
+        try:
+            if node in self.node_cache:
+                return self.node_cache[node]
 
-        if node.task.is_finished(cfg):
-            return node.task.get_output(cfg)
+            if node.task.is_finished(cfg):
+                return node.task.get_output(cfg)
 
-        def maybe_run_node(x):
-            if isinstance(x, WorkNode):
-                return self.run_node(cfg, x)
-        
-        args = recursive_map(maybe_run_node, node.args)
-        kwargs = recursive_map(maybe_run_node, node.kwargs)
-        ret = node.task.full_run(cfg, args, kwargs)
+            def maybe_run_node(x):
+                if isinstance(x, WorkNode):
+                    return self.run_node(cfg, x)
+            
+            args = recursive_map(maybe_run_node, node.args)
+            kwargs = recursive_map(maybe_run_node, node.kwargs)
+            ret = node.task.full_run(cfg, args, kwargs)
 
-        self.node_cache[node] = ret
+            self.node_cache[node] = ret
+        except:
+            if "hooks" in cfg and "on_crash" in cfg.hooks:
+                if "slack" in cfg.hooks.on_crash:
+                    msg = f"Error running {node.task.name} on {cfg.host.name} (run_name={cfg.run_name}):\n\n"
+                    msg += format_exc()
+                    url = cfg.hooks.on_crash.slack
+                    requests.post(url, json={"text": msg})
+            raise
+
         return ret
 
     def run(self, cfg):

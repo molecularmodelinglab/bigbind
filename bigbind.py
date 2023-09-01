@@ -369,12 +369,19 @@ def make_bigbind_workflow():
         activities_filtered,
     )
 
+@task()
+def error(cfg):
+    raise Exception("!! This is a test !!")
+
 if __name__ == "__main__":
     from cfg_utils import get_config
-    workflow = make_bigbind_workflow()
+    # workflow = make_bigbind_workflow()
     cfg = get_config("local")
 
-    workflow.run(cfg)
+    workflow = Workflow(error())
+    workflow.run_node(cfg, workflow.nodes[0])
+
+    # workflow.run(cfg)
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)
