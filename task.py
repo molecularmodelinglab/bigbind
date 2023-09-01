@@ -65,7 +65,12 @@ class WorkNode:
         f = lambda cfg, s, i: s[i]
         f.__name__ = f"getitem_{self.task.name}_{index}"
         f = simple_task(f)
-        return f(self, index)
+
+        f_index = lambda: index
+        f_index.__name__ = f"index_{self.task.name}_{index}"
+        f_index = simple_task(f_index)
+
+        return f(self, f_index())
 
 class Task:
     ALL_TASKS = {}
