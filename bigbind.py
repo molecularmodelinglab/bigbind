@@ -16,6 +16,8 @@ from workflow import Workflow
 from task import file_task, simple_task, task
 from downloads import StaticDownloadTask
 
+from pdb_to_mol import load_components_dict, mol_from_pdb
+
 def canonicalize(mol):
 
     order = tuple(zip(*sorted([(j, i) for i, j in enumerate(Chem.CanonicalRankAtoms(mol))])))[1]
@@ -48,6 +50,7 @@ class ProgressParallel(Parallel):
 download_chembl = StaticDownloadTask("download_chembl", "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_33_sqlite.tar.gz")
 download_sifts = StaticDownloadTask("download_sifts", "ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/pdb_chain_uniprot.csv.gz")
 download_crossdocked = StaticDownloadTask("download_crossdocked", "https://storage.googleapis.com/plantain_data/CrossDocked2022.tar.gz")
+download_comp_dict = StaticDownloadTask("download_comp_dict", "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif")
 
 # now we gotta unzip everything
 
@@ -338,6 +341,144 @@ def add_sdfs_to_activities(cfg, activities, smiles2filename):
     activities = activities.query("lig_file != 'error'").reset_index(drop=True)
     return activities
 
+@task(max_runtime=0.2)
+def get_chain_to_uniprot(cfg, con):
+    """ Map PDB ids and chains to uniprot ids """
+    sifts_df = pd.read_sql_query("SELECT * FROM SIFTS", con)
+    chain2uniprot = {}
+    for i, row in tqdm(sifts_df.iterrows(), total=len(sifts_df)):
+        chain2uniprot[(row["PDB"], row["CHAIN"])] = row["SP_PRIMARY"]
+    return chain2uniprot
+
+@task(max_runtime=0.3, num_outputs=6)
+def get_uniprot_dicts(cfg, cd_files, chain2uniprot):
+    """ Get a bunch of dictionaries mapping uniprot id to and from
+    rec file, lig file, and pocketome pocket """
+    uniprot2recs = defaultdict(set)
+    uniprot2ligs = defaultdict(set)
+    uniprot2pockets = defaultdict(set)
+    pocket2recs = defaultdict(set)
+    pocket2ligs = defaultdict(set)
+    for rec_file, lig_files in tqdm(cd_files.items(), total=len(cd_files)):
+        *rest, folder, file = rec_file.split("/")
+        pocket = folder
+        rec_id, rec_chain, *rest = file.split("_")
+        key = (rec_id, rec_chain)
+        for lig_file in lig_files:
+            if key in chain2uniprot:
+                uniprot = chain2uniprot[key]
+                uniprot2recs[uniprot].add(rec_file)
+                uniprot2ligs[uniprot].add(lig_file)
+                uniprot2pockets[uniprot].add(pocket)
+
+            pocket2recs[pocket].add(rec_file)
+            pocket2ligs[pocket].add(lig_file)
+
+    
+    pocket2uniprots = defaultdict(set)
+    for uniprot, pockets in uniprot2pockets.items():
+        for pocket in pockets:
+            pocket2uniprots[pocket].add(uniprot)
+
+    return uniprot2recs,\
+        uniprot2ligs,\
+        uniprot2pockets,\
+        pocket2uniprots,\
+        pocket2recs,\
+        pocket2ligs
+
+
+def download_lig_sdf(cfg, name, lig):
+    url = get_lig_url(lig)
+    res = requests.get(url)
+    return res.text
+
+@task(max_runtime=4)
+def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
+    """ Returns a mapping from lig file to text associated with
+    its downloaded SDF file """
+    ret = {}
+    tot_ligs = 0
+    lf_errors = []
+    for uniprot in tqdm(uniprot2ligs):
+        ligs = uniprot2ligs[uniprot]
+        for lig in ligs:
+            tot_ligs += 1
+            try:
+                ret[lig] = download_lig_sdf(cfg, lig.replace("/", "_"), lig)
+            except KeyboardInterrupt:
+                raise
+            except:
+                print(f"Error in {lig}")
+                if rigorous:
+                    raise
+                else:
+                    lf_errors.append(lig)
+                    print_exc()
+    print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
+    return ret
+
+
+def get_crystal_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
+    """ Returns the RDKit mol object. The conformation is specified
+    in the pdb lig_file and the connectivity is specified in sdf_text """
+    lig = next(Chem.ForwardSDMolSupplier(io.BytesIO(sdf_text.encode('utf-8'))))
+    lig_untrans = deepcopy(lig)
+    lig_pdb = Chem.MolFromPDBFile(lig_file)
+
+    assert lig_pdb is not None
+    assert lig is not None
+    assert '.' not in Chem.MolToSmiles(lig)
+    assert lig.GetNumAtoms() == lig_pdb.GetNumAtoms()
+    
+    conf = lig_pdb.GetConformer(0)
+    lig.RemoveConformer(0)
+    lig.AddConformer(conf)
+
+    # sometimes the coordinates are in a different order?
+    # for now just throw these out
+    assert AllChem.AlignMol(lig_untrans, lig) < align_cutoff
+    
+    return lig
+
+@task(max_runtime=1)
+def get_all_crystal_ligs(cfg, comp_dict, lig_sdfs, rigorous=False, verbose=False):
+    """ Returns a dict mapping ligand files to ligand mol objects """
+    lf_errors = []
+    ret = {}
+    for lf, sdf in tqdm(lig_sdfs.items()):
+        try:
+            ret[lf] = mol_from_pdb(lf, comp_dict)
+            # ret[lf] = get_lig(cfg, lf.replace("/", "_"), lf, sdf)
+        except KeyboardInterrupt:
+            raise
+        except:
+            try:
+                ret[lf] = get_crystal_lig(cfg, lf.replace("/", "_"), lf, sdf)
+            except KeyboardInterrupt:
+                raise
+            except:
+                if verbose:
+                    print(f"Error in {lf}")
+                if rigorous:
+                    raise
+                else:
+                    if verbose:
+                        print_exc()
+                    lf_errors.append(lf)
+    print(f"Successfully obtained {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/len(lig_sdfs))*100}%)")
+    return ret
+
+@task(max_runtime=0.1, num_outputs=2)
+def filter_uniprots(cfg, uniprot2pockets, pocket2uniprots):
+    """ Return only the uniprot IDs and pocketome pockets that we're using. Only use
+    proteins with a single pocket """
+    filtered_uniprots = { uniprot for uniprot, pockets in uniprot2pockets.items() if len(pockets) == 1 }
+    filtered_pockets = { pocket for pocket, uniprots in pocket2uniprots.items() if len(filtered_uniprots.intersection(uniprots)) }
+    print(f"Found {len(filtered_uniprots)} proteins with only 1 pocket out of {len(uniprot2pockets)} (Success rate {100*len(filtered_uniprots)/len(uniprot2pockets)}%)")
+    print(f"Found {len(filtered_pockets)} pockets with valid proteins out of {len(pocket2uniprots)} (Success rate {100*len(filtered_pockets)/len(pocket2uniprots)}%)")
+    return filtered_uniprots, filtered_pockets
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -364,9 +505,28 @@ def make_bigbind_workflow():
     smiles2filename = save_all_mol_sdfs(activities_filtered)
     activities_filtered = add_sdfs_to_activities(activities_filtered, smiles2filename)
 
+    chain2uniprot = get_chain_to_uniprot(con)
+    
+    uniprot2recs,\
+    uniprot2ligs,\
+    uniprot2pockets,\
+    pocket2uniprots,\
+    pocket2recs,\
+    pocket2ligs = get_uniprot_dicts(cd_rf2lf, chain2uniprot)
+    final_uniprots, final_pockets = filter_uniprots(uniprot2pockets,
+                                                    pocket2uniprots)
+    
+
+    comp_dict_file = download_comp_dict()
+    comp_dict = load_components_dict(comp_dict_file)
+    
+    lig_sdfs = download_all_lig_sdfs(uniprot2ligs)
+    ligfile2lig = get_all_crystal_ligs(comp_dict, lig_sdfs)
+
     return Workflow(
         saved_act_unf,
         activities_filtered,
+        ligfile2lig,
     )
 
 @task()
@@ -375,13 +535,13 @@ def error(cfg):
 
 if __name__ == "__main__":
     from cfg_utils import get_config
-    # workflow = make_bigbind_workflow()
+    workflow = make_bigbind_workflow()
     cfg = get_config("local")
 
-    workflow = Workflow(error())
-    workflow.run_node(cfg, workflow.nodes[0])
+    # workflow = Workflow(error())
+    # workflow.run_node(cfg, workflow.nodes[0])
 
-    # workflow.run(cfg)
+    workflow.run(cfg)
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)

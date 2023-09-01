@@ -58,6 +58,15 @@ class WorkNode:
     def __repr__(self):
         return f"WorkNode[{self.task.name}]"
 
+    def __getitem__(self, index):
+        # super hacky way to make a task on demand
+        if index >= self.task.num_outputs:
+            raise IndexError
+        f = lambda cfg, s, i: s[i]
+        f.__name__ = f"getitem_{self.task.name}_{index}"
+        f = simple_task(f)
+        return f(self, index)
+
 class Task:
     ALL_TASKS = {}
 
@@ -70,6 +79,7 @@ class Task:
                  n_cpu=1,
                  mem=2, # GB
                  simple=False, # is it so simple you don't need to cache?
+                 num_outputs=1,
                  ):
         self.name = name
         self._out_filename_rel = out_filename_rel
@@ -80,6 +90,7 @@ class Task:
         self.mem = mem
 
         self.simple = simple
+        self.num_outputs = num_outputs
 
         if self.name in Task.ALL_TASKS:
             raise Exception(f"Trying to define another Task with name {name}")

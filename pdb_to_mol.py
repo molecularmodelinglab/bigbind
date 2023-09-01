@@ -9,7 +9,7 @@ from tqdm import tqdm
 from rdkit import Chem
 from rdkit.Geometry import Point3D
 
-from cache import cache
+from task import task
 
 @dataclass
 class PDBBond:
@@ -30,8 +30,8 @@ class PDBChemical:
     atoms: List[PDBAtom]
     bonds: List[PDBBond]
 
-@cache
-def load_components_dict(cfg):
+@task(max_runtime=0.25)
+def load_components_dict(cfg, comp_file):
     """ Load the chemical component dictionary (from https://www.wwpdb.org/data/ccd)
     into an actual dict so we can easily determine correct bond orders from pdb files """
     cur_chemical = None
@@ -40,7 +40,7 @@ def load_components_dict(cfg):
 
     chemicals = {}
 
-    with open(cfg["pdb_components_file"], "r") as f:
+    with open(comp_file, "r") as f:
         for line in tqdm(f.readlines()):
             line = line.strip()
             if line.startswith("data_"):
