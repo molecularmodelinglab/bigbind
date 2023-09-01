@@ -66,7 +66,7 @@ class WorkNode:
         f.__name__ = f"getitem_{self.task.name}_{index}"
         f = simple_task(f)
 
-        f_index = lambda: index
+        f_index = lambda cfg: index
         f_index.__name__ = f"index_{self.task.name}_{index}"
         f_index = simple_task(f_index)
 
