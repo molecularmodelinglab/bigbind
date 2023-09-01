@@ -20,10 +20,35 @@ def submit_tasks(cfg, workflow, task_names):
     for name in task_names:
         final_nodes += workflow.find_node(name)
 
-    for level in workflow.get_levels(final_nodes):
-        for node in level:
-            if not node.can_submit(cfg): continue
-            submit_single_task(cfg, workflow, node)
+    ancestors = set()
+    for node in final_nodes:
+        ancestors.add(node)
+        ancestors = ancestors.union(node.get_all_ancestors(cfg))
+
+    to_search = { node for node in ancestors if node.can_submit(cfg) }
+    
+    node2job_id = {}
+
+    while len(to_search):
+        for node in to_search:
+            cur_anc = { n for n in node.get_all_ancestors(cfg) if n.can_submit(cfg) }
+            try:
+                job_ids = { node2job_id[anc] for anc in cur_anc }
+                break
+            except KeyError:
+                pass
+
+        print("\n----")
+        print(f"Running {node} with dependencies {job_ids}")
+        print("----")
+        node2job_id[node] = submit_slurm_task(cfg, workflow, node, job_ids)
+        to_search.remove(node)
+
+
+    # for level in workflow.get_levels(final_nodes):
+    #     for node in level:
+    #         if not node.can_submit(cfg): continue
+    #         submit_single_task(cfg, workflow, node)
 
 if __name__ == "__main__":
 

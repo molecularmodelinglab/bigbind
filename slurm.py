@@ -2,11 +2,15 @@ from datetime import timedelta
 import subprocess
 import re
 import os
+import random
+
+DRY_RUN = False
 
 sbatch_regex = re.compile("Submitted batch job (.+)")
 
-def submit_slurm_task(cfg, workflow, node):
-    """ Submits job to SLURM and returns job id """
+def submit_slurm_task(cfg, workflow, node, prereq_job_ids):
+    """ Submits job to SLURM and returns job id. Make sure it only
+    executes after all the jobds in prereq_job_ids have finished """
     index = workflow.nodes.index(node)
     runtime = timedelta(hours=node.task.max_runtime)
     
@@ -26,6 +30,8 @@ def submit_slurm_task(cfg, workflow, node):
     sbatch_args.append(f"--mem={node.task.mem}G")
     sbatch_args.append(f"--output={out_file}")
     sbatch_args.append(f"--error={err_file}")
+    if len(prereq_job_ids):
+        sbatch_args.append(f"--dependency=aftercorr:{':'.join(prereq_job_ids)}")
     sbatch_args = " ".join(sbatch_args)
 
     run_cmds = []
@@ -38,6 +44,9 @@ def submit_slurm_task(cfg, workflow, node):
 
     cmd = f"cd ~ && echo '#!/bin/bash\n {run_cmds}' | sbatch {sbatch_args}"
     print(f" Running {cmd}")
+
+    if DRY_RUN:
+        return str(random.random())
 
     result = subprocess.run(cmd, shell=True, check=True, capture_output=True)
     return sbatch_regex.match(result.stdout.decode('utf-8')).groups()[0]

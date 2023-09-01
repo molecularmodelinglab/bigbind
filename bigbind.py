@@ -78,6 +78,72 @@ def get_crossdocked_rec_to_ligs(cfg, cd_dir):
                 ret[rec_file].add(lig_file)
     return ret
 
+@task(max_runtime=0.1)
+def get_crossdocked_uniprots(cfg, con, cd_files):
+    cd_pdbs = { f.split('/')[-1].split('_')[0] for f in cd_files.keys() }
+    cd_chains = { f.split('/')[-1].split('_')[1] for f in cd_files.keys() }
+    cd_chains_str = ", ".join(map(lambda s: f"'{s}'", cd_chains))
+    cd_pdbs_str = ", ".join(map(lambda s: f"'{s}'", cd_pdbs))
+
+    crossdocked_uniprots = pd.read_sql_query(f"select SP_PRIMARY from sifts where PDB in ({cd_pdbs_str})", con)
+
+    return crossdocked_uniprots
+
+@file_task("activities_chunked.csv", max_runtime=24)
+def get_crossdocked_chembl_activities(cfg, out_filename, con, cd_uniprots):
+    """ Get all activities (with some filtering for quality) of small
+    molecules binding to proteins whose structures are in the crossdocked
+    dataset """
+    
+    cd_uniprots_str = ", ".join(map(lambda s: f"'{s}'", cd_uniprots["SP_PRIMARY"]))
+    
+    query =   f"""
+
+    SELECT md.chembl_id AS compound_chembl_id,
+    cs.canonical_smiles,
+    act.standard_type,
+    act.standard_relation,
+    act.standard_value,
+    act.standard_units,
+    act.pchembl_value,
+    act.potential_duplicate,
+    COALESCE(act.data_validity_comment, 'valid') as data_validity_comment,
+    a.confidence_score,
+    td.chembl_id AS target_chembl_id,
+    td.target_type,
+    c.accession as protein_accession,
+    a.chembl_id as assay_id
+    FROM target_dictionary td
+    JOIN assays a ON td.tid = a.tid
+    JOIN activities act ON a.assay_id = act.assay_id
+    JOIN molecule_dictionary md ON act.molregno = md.molregno
+    JOIN compound_structures cs ON md.molregno = cs.molregno
+    JOIN target_type tt ON td.target_type = tt.target_type
+    JOIN target_components tc ON td.tid = tc.tid
+    JOIN component_sequences c ON tc.component_id = c.component_id
+    AND tt.parent_type  = 'PROTEIN' 
+    AND act.pchembl_value IS NOT NULL
+    AND c.accession in ({cd_uniprots_str});
+    
+    """
+    with open(out_filename, 'w'): pass
+
+    approx_tot = 1571668
+    chunksize = 1000
+    chunks = pd.read_sql_query(query,con,chunksize=chunksize)
+    header = True
+    for i, chunk in enumerate(tqdm(chunks, total=int(approx_tot/chunksize))):
+
+        chunk.to_csv(out_filename, header=header, mode='a', index=False)
+
+        header = False
+
+    return pd.read_csv(out_filename)
+
+@simple_task
+def load_act_unfiltered(filename):
+    return pd.read_csv(filename)
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -94,7 +160,11 @@ def make_bigbind_workflow():
 
     cd_rf2lf = get_crossdocked_rec_to_ligs(cd_dir)
 
-    return Workflow(cd_rf2lf)
+    cd_uniprots = get_crossdocked_uniprots(con, cd_rf2lf)
+    activities_unfiltered_fname = get_crossdocked_chembl_activities(con, cd_uniprots)
+    activities_unfiltered = load_act_unfiltered(activities_unfiltered_fname)
+
+    return Workflow(activities_unfiltered)
 
 if __name__ == "__main__":
     from cfg_utils import get_config

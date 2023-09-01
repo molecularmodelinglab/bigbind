@@ -2,6 +2,7 @@ from functools import wraps
 import os
 from typing import List, Dict, Any
 import pickle
+from utils import recursive_map
 
 class WorkNode:
     
@@ -24,12 +25,35 @@ class WorkNode:
     def get_parents(self):
         """ Returns the immediate parents of the task,
         from the args and kwargs"""
-        raise NotImplementedError
 
-    def get_all_ancestors(self):
+        parents = set()
+
+        def add_parent(item):
+            nonlocal parents
+            if isinstance(item, WorkNode):
+                parents.add(item)
+        
+        recursive_map(add_parent, self.args)
+        recursive_map(add_parent, self.kwargs)
+
+        return parents
+
+    def get_all_ancestors(self, cfg):
         """ Returns a list of all the ancestors of the node, excluding
-        all the tasks that can't be submitted """
-        raise NotImplementedError
+        all the tasks that have already run """
+        
+        ancestors = set()
+
+        def add_ancestor(item):
+            nonlocal ancestors
+            if isinstance(item, WorkNode) and not item.task.is_finished(cfg):
+                ancestors.add(item)
+                ancestors = ancestors.union(item.get_all_ancestors(cfg))
+        
+        recursive_map(add_ancestor, self.args)
+        recursive_map(add_ancestor, self.kwargs)
+
+        return ancestors
 
     def __repr__(self):
         return f"WorkNode[{self.task.name}]"
