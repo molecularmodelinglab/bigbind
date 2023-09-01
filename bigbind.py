@@ -307,7 +307,7 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False, filename=
 
 SDF_N_CPU = 64
 SDF_TOTAL_RUNTIME=64
-@task(max_runtime=SDF_TOTAL_RUNTIME/SDF_N_CPU, n_cpu=SDF_N_CPU)
+@task(max_runtime=SDF_TOTAL_RUNTIME/SDF_N_CPU, n_cpu=SDF_N_CPU, mem=1*SDF_N_CPU)
 def save_all_mol_sdfs(cfg, activities):
     """ Embed and UFF optimize each mol in BigBind"""
     unique_smiles = activities.canonical_smiles.unique()
