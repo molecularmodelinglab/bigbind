@@ -5,10 +5,44 @@ import sqlite3
 import pandas as pd
 from collections import defaultdict
 from tqdm import tqdm
+from joblib import Parallel, delayed
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem import Descriptors, AllChem
+import signal
 
+from cfg_utils import get_output_dir
 from workflow import Workflow
 from task import file_task, simple_task, task
 from downloads import StaticDownloadTask
+
+def canonicalize(mol):
+
+    order = tuple(zip(*sorted([(j, i) for i, j in enumerate(Chem.CanonicalRankAtoms(mol))])))[1]
+    mol = Chem.RenumberAtoms(mol, list(order))
+
+    return mol
+
+class timeout:
+    def __init__(self, seconds, error_message='Timeout'):
+        self.seconds = seconds
+        self.error_message = error_message
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
+
+class ProgressParallel(Parallel):
+    def __call__(self, total, *args, **kwargs):
+        with tqdm(total=total) as self._pbar:
+            return Parallel.__call__(self, *args, **kwargs)
+
+    def print_progress(self):
+        self._pbar.n = self.n_completed_tasks
+        self._pbar.refresh()
 
 # first define all the things we need to download
 download_chembl = StaticDownloadTask("download_chembl", "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_33_sqlite.tar.gz")
@@ -80,6 +114,7 @@ def get_crossdocked_rec_to_ligs(cfg, cd_dir):
 
 @task(max_runtime=0.1)
 def get_crossdocked_uniprots(cfg, con, cd_files):
+    """ Return all the uniprot IDs from CrossDocked"""
     cd_pdbs = { f.split('/')[-1].split('_')[0] for f in cd_files.keys() }
     cd_chains = { f.split('/')[-1].split('_')[1] for f in cd_files.keys() }
     cd_chains_str = ", ".join(map(lambda s: f"'{s}'", cd_chains))
@@ -140,9 +175,168 @@ def get_crossdocked_chembl_activities(cfg, out_filename, con, cd_uniprots):
 
     return pd.read_csv(out_filename)
 
+@task(max_runtime=2)
+def filter_activities(cfg, activities_unfiltered):
+    """ Remove mixtures, bad assays, and remove duplicates"""
+    # remove mixtures
+    activities = activities_unfiltered[~activities_unfiltered["canonical_smiles"].str.contains("\.")].reset_index(drop=True)
+
+    # remove anything chembl thinks could be sketchy
+    activities = activities.query("potential_duplicate == 0 and data_validity_comment == 'valid' and confidence_score >= 8 and standard_relation == '='")
+
+    # we don't have these values for everything after deduping so just drop em
+    activities = activities.drop(columns=["potential_duplicate", "data_validity_comment", "confidence_score", "target_chembl_id", "target_type", "assay_id"])
+
+    # now we filter duplicates
+    dup_indexes = activities.duplicated(keep=False, subset=['compound_chembl_id', 'protein_accession'])
+    dup_df = activities[dup_indexes]
+
+    dup_rows = defaultdict(list)
+    for i, row in tqdm(dup_df.iterrows(), total=len(dup_df)):
+        dup_rows[(row['compound_chembl_id'], row['protein_accession'])].append(row)
+
+    activities = activities[~dup_indexes].reset_index(drop=True)
+
+    new_data = {
+        "canonical_smiles": [],
+        "compound_chembl_id": [],
+        "standard_type": [],
+        "standard_relation": [],
+        "standard_value": [],
+        "standard_units": [],
+        "pchembl_value": [],
+        "protein_accession": []
+    }
+    
+    uniprot2df = {} # we want to cache the ligand dfs we find for each protein
+
+    # take the median value of duplicated measurements
+    for (chembl_id, uniprot), rows in tqdm(dup_rows.items()):
+        st_types = [ r.standard_type for r in rows ]
+        pchembl_values = [ r.pchembl_value for r in rows ]
+        
+        
+        final_pchembl = np.median(pchembl_values)
+        final_st_type = "mixed"
+        final_nM = 10**(9-final_pchembl)
+        new_data["canonical_smiles"].append(rows[0].canonical_smiles)
+        new_data["compound_chembl_id"].append(chembl_id)
+        new_data["standard_type"].append(final_st_type)
+        new_data["standard_relation"].append("=")
+        new_data["standard_value"].append(final_nM)
+        new_data["standard_units"].append('nM')
+        new_data["pchembl_value"].append(final_pchembl)
+        new_data["protein_accession"].append(uniprot)
+
+    new_data_df = pd.DataFrame(new_data)
+    activities = pd.concat([activities, new_data_df])
+
+    return activities
+
 @simple_task
-def load_act_unfiltered(filename):
+def load_act_unfiltered(cfg, filename):
     return pd.read_csv(filename)
+
+@task(max_runtime=0.1)
+def save_activities_unfiltered(cfg, activities_unfiltered):
+    activities_unfiltered.to_csv(get_output_dir(cfg) + "/activities_unfiltered.csv", index=False)
+
+# ZINC yeets any molecule containing other elements, so shall we
+allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
+min_atoms_in_mol = 5
+max_mol_weight = 1000
+
+def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False, filename=None, ret_mol=False):
+    """ Embed + UFF optimize single mol"""
+
+    periodic_table = Chem.GetPeriodicTable()
+    
+    if filename is None:
+        folder = get_output_dir(cfg) + "/chembl_structures"
+        os.makedirs(folder, exist_ok=True)
+        filename = folder + "/" + name + ".sdf"
+
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+
+    if mol.GetNumAtoms() < min_atoms_in_mol: 
+        if verbose:
+            print(f"Rejecting {smiles} because it has only {mol.GetNumAtoms()} atoms")
+        return False
+
+    mw = Descriptors.MolWt(mol)
+    if mw > max_mol_weight:
+        if verbose:
+            print(f"Rejecting {smiles} because it is too heavy {mw=}")
+        return False
+
+    for atom in mol.GetAtoms():
+        num = atom.GetAtomicNum()
+        sym = Chem.PeriodicTable.GetElementSymbol(periodic_table, num)
+        if sym not in allowed_atoms:
+            if verbose:
+                print(f"Rejecting {smiles} because it contains {sym}.")
+            return False
+
+    # early exit cus this takes a while and Paul doesn't need the sdfs
+    # return True
+
+    try:
+        with timeout(20):
+            # try to come up with a 3d structure
+            for i in range(num_embed_tries):
+                conf_id = AllChem.EmbedMolecule(mol)
+                if conf_id == 0:
+                    try:
+                        AllChem.UFFOptimizeMolecule(mol, 500)
+                    except RuntimeError:
+                        return False
+                    break
+            else:
+                return False
+    except TimeoutError:
+        return False
+
+    writer = Chem.SDWriter(filename)
+    writer.write(mol)
+    writer.close()
+
+    if ret_mol:
+        return next(Chem.SDMolSupplier(filename, sanitize=True))
+
+    return True
+
+SDF_N_CPU = 64
+SDF_TOTAL_RUNTIME=64
+@task(max_runtime=SDF_TOTAL_RUNTIME/SDF_N_CPU, n_cpu=SDF_N_CPU)
+def save_all_mol_sdfs(cfg, activities):
+    """ Embed and UFF optimize each mol in BigBind"""
+    unique_smiles = activities.canonical_smiles.unique()
+    smiles2name = {}
+    for i, smiles in enumerate(unique_smiles):
+        smiles2name[smiles] = f"mol_{i}"
+
+    smiles2filename = {}
+    results = ProgressParallel(n_jobs=SDF_N_CPU)(len(smiles2name), (delayed(save_mol_sdf)(cfg, name, smiles) for smiles, name in smiles2name.items()))
+    for result, (smiles, name) in zip(results, smiles2name.items()):
+        if result:
+            filename = f"chembl_structures/{name}.sdf"
+            smiles2filename[smiles] = filename
+
+    return smiles2filename
+
+@task(max_runtime=0.2)
+def add_sdfs_to_activities(cfg, activities, smiles2filename):
+    filename_col = []
+    for smiles in activities.canonical_smiles:
+        if smiles in smiles2filename:
+            filename_col.append(smiles2filename[smiles])
+        else:
+            filename_col.append("error")
+
+    activities["lig_file"] = filename_col
+    
+    activities = activities.query("lig_file != 'error'").reset_index(drop=True)
+    return activities
 
 def make_bigbind_workflow():
 
@@ -163,8 +357,17 @@ def make_bigbind_workflow():
     cd_uniprots = get_crossdocked_uniprots(con, cd_rf2lf)
     activities_unfiltered_fname = get_crossdocked_chembl_activities(con, cd_uniprots)
     activities_unfiltered = load_act_unfiltered(activities_unfiltered_fname)
+    saved_act_unf = save_activities_unfiltered(activities_unfiltered)
 
-    return Workflow(activities_unfiltered)
+    activities_filtered = filter_activities(activities_unfiltered)
+
+    smiles2filename = save_all_mol_sdfs(activities_filtered)
+    activities_filtered = add_sdfs_to_activities(activities_filtered, smiles2filename)
+
+    return Workflow(
+        saved_act_unf,
+        activities_filtered,
+    )
 
 if __name__ == "__main__":
     from cfg_utils import get_config

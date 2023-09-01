@@ -181,20 +181,21 @@ def filter_activities(cfg, activities_unfiltered):
     activities = activities.query("potential_duplicate == 0 and data_validity_comment == 'valid' and confidence_score >= 8 and standard_relation == '='")
 
     # we don't have these values for everything after deduping so just drop em
-    activities = activities.drop(columns=["compound_chembl_id", "potential_duplicate", "data_validity_comment", "confidence_score", "target_chembl_id", "target_type", "assay_id"])
+    activities = activities.drop(columns=["potential_duplicate", "data_validity_comment", "confidence_score", "target_chembl_id", "target_type", "assay_id"])
 
     # now we filter duplicates
-    dup_indexes = activities.duplicated(keep=False, subset=['canonical_smiles', 'protein_accession'])
+    dup_indexes = activities.duplicated(keep=False, subset=['compound_chembl_id', 'protein_accession'])
     dup_df = activities[dup_indexes]
 
     dup_rows = defaultdict(list)
     for i, row in tqdm(dup_df.iterrows(), total=len(dup_df)):
-        dup_rows[(row['canonical_smiles'], row['protein_accession'])].append(row)
+        dup_rows[(row['compounds_chembl_id'], row['protein_accession'])].append(row)
 
     activities = activities[~dup_indexes].reset_index(drop=True)
 
     new_data = {
         "canonical_smiles": [],
+        "compound_chembl_id": []
         "standard_type": [],
         "standard_relation": [],
         "standard_value": [],
@@ -213,7 +214,8 @@ def filter_activities(cfg, activities_unfiltered):
         final_pchembl = np.median(pchembl_values)
         final_st_type = "mixed"
         final_nM = 10**(9-final_pchembl)
-        new_data["canonical_smiles"].append(smiles)
+        new_data["canonical_smiles"].append(rows.canonical_smiles[0])
+        new_data["compound_chembl_id"].append(chembl_id)
         new_data["standard_type"].append(final_st_type)
         new_data["standard_relation"].append("=")
         new_data["standard_value"].append(final_nM)
