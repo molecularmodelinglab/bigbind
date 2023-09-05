@@ -137,6 +137,8 @@ class Task:
     def full_run(self, cfg, args, kwargs, force=False):
         """ Checks to see if we already ran it -- if so, we're good!"""
 
+        # print(f"  Running {self.name}")
+
         if self.simple:
             return self.run(cfg, *args, **kwargs)
 

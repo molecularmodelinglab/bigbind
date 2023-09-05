@@ -31,6 +31,8 @@ class Workflow:
     def run_node(self, cfg, node: WorkNode):
         """ Run a single node"""
         try:
+            # print(node, node in self.node_cache, node.task.is_finished(cfg))
+
             if node in self.node_cache:
                 return self.node_cache[node]
 
@@ -58,8 +60,10 @@ class Workflow:
         return ret
 
     def run(self, cfg):
+        ret = []
         for out_node in self.out_nodes:
-            self.run_node(cfg, out_node)
+            ret.append(self.run_node(cfg, out_node))
+        return ret
 
     def get_graph(self):
         """ Return a nx graph representing the Workflow DAG. An (directed) edge

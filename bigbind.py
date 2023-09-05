@@ -10,6 +10,7 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem
 import signal
+import requests
 from traceback import print_exc
 
 from pdb_ligand import get_lig_url
@@ -104,7 +105,7 @@ def load_sifts_into_chembl(cfg, con, sifts_csv):
 
     return con
 
-@task(max_runtime=0.1)
+@task(max_runtime=0.1, local=True)
 def get_crossdocked_rec_to_ligs(cfg, cd_dir):
     """ Get the pdb files associated with the crystal rec and lig files.
     (the crossdocked types file only lists gninatypes files). Returns a
@@ -352,7 +353,7 @@ def get_chain_to_uniprot(cfg, con):
         chain2uniprot[(row["PDB"], row["CHAIN"])] = row["SP_PRIMARY"]
     return chain2uniprot
 
-@task(max_runtime=0.3, num_outputs=6)
+@task(max_runtime=0.3, num_outputs=6, local=True)
 def get_uniprot_dicts(cfg, cd_files, chain2uniprot):
     """ Get a bunch of dictionaries mapping uniprot id to and from
     rec file, lig file, and pocketome pocket """
@@ -543,7 +544,10 @@ if __name__ == "__main__":
     # workflow = Workflow(error())
     # workflow.run_node(cfg, workflow.nodes[0])
 
-    workflow.run(cfg)
+    # for node in workflow.nodes:
+    #     print(node)
+
+    print(workflow.run(cfg))
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)
