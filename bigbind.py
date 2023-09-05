@@ -396,7 +396,7 @@ def download_lig_sdf(cfg, name, lig):
     res = requests.get(url)
     return res.text
 
-@task(max_runtime=4)
+@task(max_runtime=10)
 def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
     """ Returns a mapping from lig file to text associated with
     its downloaded SDF file """
