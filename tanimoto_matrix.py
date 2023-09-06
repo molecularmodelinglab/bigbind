@@ -30,7 +30,7 @@ MORGAN_FP_CPUS = 32
 def get_morgan_fps_parallel(cfg, df):
     smi_list = list(df.canonical_smiles.unique())
     fps = []
-    with Pool(cfg['num_cpus']) as p:
+    with Pool(MORGAN_FP_CPUS) as p:
         fps = list(tqdm(p.imap(get_fp, smi_list), total=len(smi_list)))
     fps = np.asarray(fps)
     return smi_list, fps

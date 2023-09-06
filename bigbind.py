@@ -631,7 +631,7 @@ def make_bigbind_workflow():
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
     return Workflow(
-        pocket_centers,
+        # pocket_centers,
         lig_sim_mat
     )
 
