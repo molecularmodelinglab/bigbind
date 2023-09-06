@@ -556,6 +556,18 @@ def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
             rec2res_num[recfile] = res_num
     return rec2pocketfile, rec2res_num
 
+@task(num_outputs=2)
+def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
+    """ Return the centroids and box sizes for each pocket """
+    centers = {}
+    sizes = {}
+    for pocket, ligfiles in tqdm(pocket2ligs.items()):
+        ligs = { ligfile2lig[lf] for lf in ligfiles }
+        center, size = get_bounds(cfg, ligs, padding)
+        centers[pocket] = center
+        sizes[pocket] = size
+    return centers, sizes
+
 
 def make_bigbind_workflow():
 
