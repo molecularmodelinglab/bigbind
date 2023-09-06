@@ -13,12 +13,10 @@ import signal
 import requests
 from traceback import print_exc
 
-from pdb_ligand import get_lig_url
 from cfg_utils import get_output_dir
 from workflow import Workflow
 from task import file_task, simple_task, task
 from downloads import StaticDownloadTask
-
 from pdb_to_mol import load_components_dict, mol_from_pdb
 
 def canonicalize(mol):
@@ -396,30 +394,30 @@ def download_lig_sdf(cfg, name, lig):
     res = requests.get(url)
     return res.text
 
-@task(max_runtime=10)
-def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
-    """ Returns a mapping from lig file to text associated with
-    its downloaded SDF file """
-    ret = {}
-    tot_ligs = 0
-    lf_errors = []
-    for uniprot in tqdm(uniprot2ligs):
-        ligs = uniprot2ligs[uniprot]
-        for lig in ligs:
-            tot_ligs += 1
-            try:
-                ret[lig] = download_lig_sdf(cfg, lig.replace("/", "_"), lig)
-            except KeyboardInterrupt:
-                raise
-            except:
-                print(f"Error in {lig}")
-                if rigorous:
-                    raise
-                else:
-                    lf_errors.append(lig)
-                    print_exc()
-    print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
-    return ret
+# @task(max_runtime=10)
+# def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
+#     """ Returns a mapping from lig file to text associated with
+#     its downloaded SDF file """
+#     ret = {}
+#     tot_ligs = 0
+#     lf_errors = []
+#     for uniprot in tqdm(uniprot2ligs):
+#         ligs = uniprot2ligs[uniprot]
+#         for lig in ligs:
+#             tot_ligs += 1
+#             try:
+#                 ret[lig] = download_lig_sdf(cfg, lig.replace("/", "_"), lig)
+#             except KeyboardInterrupt:
+#                 raise
+#             except:
+#                 print(f"Error in {lig}")
+#                 if rigorous:
+#                     raise
+#                 else:
+#                     lf_errors.append(lig)
+#                     print_exc()
+#     print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
+#     return ret
 
 
 def get_crystal_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
@@ -482,6 +480,83 @@ def filter_uniprots(cfg, uniprot2pockets, pocket2uniprots):
     print(f"Found {len(filtered_pockets)} pockets with valid proteins out of {len(pocket2uniprots)} (Success rate {100*len(filtered_pockets)/len(pocket2uniprots)}%)")
     return filtered_uniprots, filtered_pockets
 
+@task(max_runtime=3, num_outputs=4)
+def save_all_structures(cfg,
+                        final_pockets,
+                        pocket2uniprots,
+                        pocket2recs,
+                        pocket2ligs,
+                        ligfile2lig):
+    """ Saves the pdb receptor and sdf ligand files. Returns new
+    dicts that use _those_ filename instead of crossdocked's """
+
+    folder = get_output_dir(cfg)
+    
+    my_pocket2recs = defaultdict(set)
+    my_pocket2ligs = defaultdict(set)
+    my_ligfile2lig = {}
+    my_ligfile2uff_lig = {}
+    
+    for pocket in tqdm(pocket2uniprots): # tqdm(final_pockets):
+        out_folder = folder + "/" + pocket
+        
+        recfiles = pocket2recs[pocket]
+        ligfiles = pocket2ligs[pocket]
+
+        ligs = set()
+        for ligfile in ligfiles:
+            if ligfile not in ligfile2lig: continue
+            
+            lig = ligfile2lig[ligfile]
+            ligs.add(lig)
+            
+            os.makedirs(out_folder, exist_ok=True)
+            out_file = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + ".sdf"
+            my_pocket2ligs[pocket].add(out_file)
+            my_ligfile2lig[out_file] = lig
+            writer = Chem.SDWriter(out_file)
+            writer.write(lig)
+            writer.close()
+
+            uff_filename = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + "_uff.sdf"
+            # if os.path.exists(uff_filename):
+            #     my_ligfile2uff_lig[out_file] = uff_filename
+            uff = save_mol_sdf(cfg, None, Chem.MolToSmiles(lig), filename=uff_filename, ret_mol=True)
+            if uff:
+                uff_noh = canonicalize(Chem.RemoveHs(uff))
+                lig_noh = canonicalize(Chem.RemoveHs(lig))
+                if Chem.MolToSmiles(uff_noh, isomericSmiles=False) != Chem.MolToSmiles(lig_noh, isomericSmiles=False):
+                    print(f"Error saving uff for {out_file}")
+                    my_ligfile2uff_lig[out_file] = "none"
+                else:
+                    my_ligfile2uff_lig[out_file] = uff_filename
+            else:
+                my_ligfile2uff_lig[out_file] = "none"
+
+        if len(ligs):
+            for recfile in recfiles:
+                out_file = out_folder + "/" + recfile.split("/")[-1]
+                my_pocket2recs[pocket].add(out_file)
+                shutil.copyfile(recfile, out_file)
+
+    return my_pocket2recs, my_pocket2ligs, my_ligfile2lig, my_ligfile2uff_lig
+
+@task(num_outputs=2)
+def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
+    """ """
+    rec2pocketfile = {}
+    rec2res_num = {}
+    for pocket, recfiles in tqdm(pocket2recs.items()):
+        ligfiles = pocket2ligs[pocket]
+        ligs = { ligfile2lig[lf] for lf in ligfiles }
+        pocket_files, res_numbers = save_pockets(recfiles, ligs, lig_dist_cutoff=5)
+        for recfile, pocket_file in pocket_files.items():
+            res_num = res_numbers[recfile]
+            rec2pocketfile[recfile] = pocket_file
+            rec2res_num[recfile] = res_num
+    return rec2pocketfile, rec2res_num
+
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -525,6 +600,20 @@ def make_bigbind_workflow():
     
     lig_sdfs = download_all_lig_sdfs(uniprot2ligs)
     ligfile2lig = get_all_crystal_ligs(comp_dict, lig_sdfs)
+
+    pocket2recs,\
+    pocket2ligs,\
+    ligfile2lig,\
+    ligfile2uff = save_all_structures(final_pockets,
+                                      pocket2uniprots,
+                                      pocket2recs,
+                                      pocket2ligs,
+                                      ligfile2lig)
+    
+    rec2pocketfile, rec2res_num = save_all_pockets(pocket2recs, pocket2ligs, ligfile2lig)
+    pocket_centers, pocket_sizes = get_all_pocket_bounds(pocket2ligs, ligfile2lig)
+
+
 
     return Workflow(
         saved_act_unf,
