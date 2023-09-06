@@ -28,7 +28,7 @@ def get_fp(smi, radius=4, bits=2048):
 MORGAN_FP_CPUS = 32
 @task(max_runtime=1, n_cpu=MORGAN_FP_CPUS, num_outputs=2)
 def get_morgan_fps_parallel(cfg, df):
-    smi_list = list(df.lig_smiles.unique())
+    smi_list = list(df.canonical_smiles.unique())
     fps = []
     with Pool(cfg['num_cpus']) as p:
         fps = list(tqdm(p.imap(get_fp, smi_list), total=len(smi_list)))
