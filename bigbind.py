@@ -628,7 +628,7 @@ def make_bigbind_workflow():
     pocket_centers, pocket_sizes = get_all_pocket_bounds(pocket2ligs, ligfile2lig)
 
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
-    lig_sim_mat = get_tanimoto_matrix(fps)
+    lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
     return Workflow(
         pocket_centers,
