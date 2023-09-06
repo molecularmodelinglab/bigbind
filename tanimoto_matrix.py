@@ -26,7 +26,7 @@ def get_fp(smi, radius=4, bits=2048):
 
 # like get_morgan_fps, but parallelized
 MORGAN_FP_CPUS = 32
-@task(max_runtime=1, n_cpu=MORGAN_FP_CPUS, num_outputs=2)
+@task(max_runtime=1, n_cpu=MORGAN_FP_CPUS, num_outputs=2, mem=32)
 def get_morgan_fps_parallel(cfg, df):
     smi_list = list(df.canonical_smiles.unique())
     fps = []
@@ -66,7 +66,7 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
     return ssim
 
 TANIMOTO_CPUS = 64
-@task(max_runtime=12, n_cpu=TANIMOTO_CPUS)
+@task(max_runtime=12, n_cpu=TANIMOTO_CPUS, mem=32)
 def get_tanimoto_matrix(cfg, fps):
     try:
         fp_sum = fps.sum(-1)
