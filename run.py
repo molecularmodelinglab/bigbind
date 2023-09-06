@@ -1047,7 +1047,6 @@ def run(cfg):
 
     # cluster and save everything
     lit_pcba_pockets = get_lit_pcba_pockets(cfg, con, uniprot2pockets)
-    clusters = get_clusters(cfg, pocket2rep_rec, full_scores)
     splits = get_v2_splits(cfg, clusters, lit_pcba_pockets)
 
     save_clustered_structs(cfg, struct_df, splits)

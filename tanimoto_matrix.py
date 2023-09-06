@@ -8,10 +8,8 @@ import pandas as pd
 from scipy import sparse
 from tqdm import tqdm
 import yaml
-from cache import cache
+from task import task
 
-
-@cache
 def get_morgan_fps(cfg, df, radius=3, bits=2048):
     fps = []
     for smi in tqdm(df.lig_smiles):
@@ -27,13 +25,15 @@ def get_fp(smi, radius=4, bits=2048):
     return np.array(fp, dtype=bool)
 
 # like get_morgan_fps, but parallelized
-@cache
+MORGAN_FP_CPUS
+@task(max_runtime=1, n_cpu=MORGAN_FP_CPUS, num_outputs=2)
 def get_morgan_fps_parallel(cfg, df):
+    smi_list = list(df.lig_smiles.unique())
     fps = []
     with Pool(cfg['num_cpus']) as p:
-        fps = list(tqdm(p.imap(get_fp, df.lig_smiles), total=len(df)))
+        fps = list(tqdm(p.imap(get_fp, smi_list), total=len(smi_list)))
     fps = np.asarray(fps)
-    return fps
+    return smi_list, fps
 
 def batch_tanimoto(fp, fps):
     inter = np.logical_and(fp, fps)
@@ -65,7 +65,8 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
 
     return ssim
 
-@cache
+TANIMOTO_CPUS = 64
+@task(max_runtime=12, n_cpu=TANIMOTO_CPUS)
 def get_tanimoto_matrix(cfg, fps):
     try:
         fp_sum = fps.sum(-1)
@@ -79,7 +80,7 @@ def get_tanimoto_matrix(cfg, fps):
         fp_sum_shared[:] = fp_sum[:]
 
         sim_func = partial(batch_tanimoto_faster, fps.shape, fp_shm.name, fp_sum.shape, fp_sum_shm.name)
-        with Pool(cfg['num_cpus']) as p:
+        with Pool(TANIMOTO_CPUS) as p:
             cols = list(tqdm(p.imap(sim_func, range(len(fps))), total=len(fps)))
         return sparse.vstack(cols)
     finally:

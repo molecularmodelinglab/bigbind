@@ -2,6 +2,7 @@ import subprocess
 import os
 from glob import glob
 import sqlite3
+import shutildsddssddsdfgdccvbhdgcvbsssdfxdfsdsdd
 import pandas as pd
 from collections import defaultdict
 from tqdm import tqdm
@@ -18,6 +19,7 @@ from workflow import Workflow
 from task import file_task, simple_task, task
 from downloads import StaticDownloadTask
 from pdb_to_mol import load_components_dict, mol_from_pdb
+from tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
 
 def canonicalize(mol):
 
@@ -625,12 +627,12 @@ def make_bigbind_workflow():
     rec2pocketfile, rec2res_num = save_all_pockets(pocket2recs, pocket2ligs, ligfile2lig)
     pocket_centers, pocket_sizes = get_all_pocket_bounds(pocket2ligs, ligfile2lig)
 
-
+    lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
+    lig_sim_mat = get_tanimoto_matrix(fps)
 
     return Workflow(
-        saved_act_unf,
-        activities_filtered,
-        ligfile2lig,
+        pocket_centers,
+        lig_sim_mat
     )
 
 @task()

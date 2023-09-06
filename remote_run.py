@@ -36,7 +36,9 @@ def transfer_git(host):
         subprocess.run(f"git symbolic-ref HEAD refs/heads/{cur_branch} && git reset", shell=True)
         subprocess.run(f"git branch -D {new_branch}", shell=True)
 
-def remote_run(host, host_name, task_name, hostname_key="hostname"):
+def remote_run(host, host_name, hostname_key="hostname"):
+
+    task_name = "submit"
 
     log_dir = os.path.join(host.work_dir, "logs")
     out_file = os.path.join(log_dir, task_name + ".out")
@@ -49,7 +51,7 @@ def remote_run(host, host_name, task_name, hostname_key="hostname"):
     remote_cmds.append(f"cd {host.repo_dir}")
     remote_cmds.append("pip install -r requirements.txt")
     remote_cmds.append("echo 'Ending setup. Starting task'")
-    remote_cmds.append(f"python -m local_run {host_name} {task_name}")
+    remote_cmds.append(f"python -m local_run {host_name} -s")
 
     cmd = f"echo 'mkdir -p {log_dir} && nohup bash -c \"{' && '.join(remote_cmds)}\" 1> {out_file} 2> {err_file} &' | ssh {host.user}@{host[hostname_key]}"
     print(f"Running {cmd}")
@@ -58,8 +60,8 @@ def remote_run(host, host_name, task_name, hostname_key="hostname"):
 if __name__ == "__main__":
     cfg = OmegaConf.load("configs/hosts.yaml")
     host_name = "longleaf"
-    task_name = sys.argv[1]
+    # task_name = sys.argv[1]
     host = cfg[host_name]
 
     transfer_git(host)
-    remote_run(host, host_name, task_name, 'network_hostname')
+    remote_run(host, host_name, 'network_hostname')
