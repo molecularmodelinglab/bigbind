@@ -394,30 +394,30 @@ def download_lig_sdf(cfg, name, lig):
     res = requests.get(url)
     return res.text
 
-# @task(max_runtime=10)
-# def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
-#     """ Returns a mapping from lig file to text associated with
-#     its downloaded SDF file """
-#     ret = {}
-#     tot_ligs = 0
-#     lf_errors = []
-#     for uniprot in tqdm(uniprot2ligs):
-#         ligs = uniprot2ligs[uniprot]
-#         for lig in ligs:
-#             tot_ligs += 1
-#             try:
-#                 ret[lig] = download_lig_sdf(cfg, lig.replace("/", "_"), lig)
-#             except KeyboardInterrupt:
-#                 raise
-#             except:
-#                 print(f"Error in {lig}")
-#                 if rigorous:
-#                     raise
-#                 else:
-#                     lf_errors.append(lig)
-#                     print_exc()
-#     print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
-#     return ret
+@task(max_runtime=10)
+def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
+    """ Returns a mapping from lig file to text associated with
+    its downloaded SDF file """
+    ret = {}
+    tot_ligs = 0
+    lf_errors = []
+    for uniprot in tqdm(uniprot2ligs):
+        ligs = uniprot2ligs[uniprot]
+        for lig in ligs:
+            tot_ligs += 1
+            try:
+                ret[lig] = download_lig_sdf(cfg, lig.replace("/", "_"), lig)
+            except KeyboardInterrupt:
+                raise
+            except:
+                print(f"Error in {lig}")
+                if rigorous:
+                    raise
+                else:
+                    lf_errors.append(lig)
+                    print_exc()
+    print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
+    return ret
 
 
 def get_crystal_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
