@@ -576,7 +576,7 @@ def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
 
 pdb_parser = PDBParser(QUIET=True)
 @task(max_runtime=2)
-def get_recfile_to_struct(rec_to_pocketfile):
+def get_recfile_to_struct(cfg, rec_to_pocketfile):
     ret = {}
     for rec in rec_to_pocketfile.keys():
         ret[rec] = pdb_parser.get_structure("1", rec)
