@@ -4,6 +4,9 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Polypeptide import PPBuilder, is_aa
 import numpy as np
 from functools import reduce
+from tqdm import tqdm
+
+from task import task
 
 def get_all_res_nums(pocket_file):
     """ Return the set of all residue numbers in the pocket """
@@ -163,9 +166,9 @@ def pocket_tm_score(r1_file, r2_file, r1_poc_file, r2_poc_file):
 @task()
 def get_all_pocket_tm_scores(cfg, rec2pocketfile):
     all_recs = list(rec2pocketfile.keys())
-    all_pairs = [ (all_recs[i], all_recs[j]) for i in range(j) for j in range(len(all_recs))]
+    all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
     ret = {}
-    for r1, r2 in all_pairs:
+    for r1, r2 in tqdm(all_pairs):
         p1 = rec2pocketfile[r1]
         p2 = rec2pocketfile[r2]
         ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)

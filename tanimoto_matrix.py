@@ -65,7 +65,7 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
     return ssim
 
 TANIMOTO_CPUS = 16
-@task(max_runtime=24, n_cpu=TANIMOTO_CPUS, mem=32)
+@task(max_runtime=48, n_cpu=TANIMOTO_CPUS, mem=32)
 def get_tanimoto_matrix(cfg, fps):
     try:
         fp_sum = fps.sum(-1)
