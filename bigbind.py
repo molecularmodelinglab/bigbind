@@ -21,7 +21,7 @@ from downloads import StaticDownloadTask
 from pdb_to_mol import load_components_dict, mol_from_pdb
 from tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
 from pocket_tm_score import get_all_pocket_tm_scores
-from pdb_lig import get_lig_url, save_pockets
+from pdb_ligand import get_lig_url, save_pockets
 
 def canonicalize(mol):
 
