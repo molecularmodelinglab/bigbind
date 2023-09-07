@@ -578,7 +578,7 @@ pdb_parser = PDBParser(QUIET=True)
 @task(max_runtime=2)
 def get_recfile_to_struct(cfg, rec_to_pocketfile):
     ret = {}
-    for rec in rec_to_pocketfile.keys():
+    for rec in tqdm(rec_to_pocketfile.keys()):
         ret[rec] = pdb_parser.get_structure("1", rec)
     return ret
 
