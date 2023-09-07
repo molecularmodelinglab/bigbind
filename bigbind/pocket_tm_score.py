@@ -172,7 +172,7 @@ def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
     r1 = np.concatenate([rec1_coords[all_rec1_indexes], rec1_beta[all_rec1_indexes]], 0)
     r2 = np.concatenate([rec2_coords[all_rec2_indexes], rec2_beta[all_rec2_indexes]], 0)
 
-    align_idx = np.ones(len(r1), dtype=np.bool)
+    align_idx = np.ones(len(r1), dtype=bool)
 
     for i in range(10):
         aligned_r2 = get_aligned_coords(r1, r2, align_idx)
