@@ -3,7 +3,7 @@ from Bio import pairwise2
 from Bio.PDB import PDBParser
 from Bio.PDB.Polypeptide import PPBuilder, is_aa
 import numpy as np
-from functools import reduce
+from functools import reduce, lru_cache
 from tqdm import tqdm
 
 from utils.task import task
@@ -70,9 +70,13 @@ def get_aligned_coords(ref, other):
 
     return np.dot(rotation_matrix, (other - centroid_other).T).T + centroid_ref
 
+pdb_parser = PDBParser(QUIET=True)
+@lru_cache(maxsize=256)
+def get_struct(rf):
+    return pdb_parser.get_structure("1", rf)
 
 OVERLAP_CUTOFF = 5
-def pocket_tm_score(protein1_pdb, protein2_pdb, r1_poc_file, r2_poc_file):
+def pocket_tm_score(r1, r2, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
 
@@ -80,8 +84,8 @@ def pocket_tm_score(protein1_pdb, protein2_pdb, r1_poc_file, r2_poc_file):
 
     # # Load PDB structures using PDB IDs
     # pdb_parser = PDBParser(QUIET=True)
-    # protein1_pdb = pdb_parser.get_structure("1", r1_file)
-    # protein2_pdb = pdb_parser.get_structure("2", r2_file)
+    protein1_pdb = get_struct(r1_file)
+    protein2_pdb = get_struct(r2_file)
 
     # Align PDB structures based on the aligned sequences
     ppb = PPBuilder()
