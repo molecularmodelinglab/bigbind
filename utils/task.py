@@ -1,6 +1,7 @@
 from functools import wraps
 import os
 from typing import List, Dict, Any
+from tqdm import tqdm
 import pickle
 from utils.utils import recursive_map
 
@@ -241,7 +242,7 @@ def iter_task(n_cpu, max_runtime, **kwargs):
                 chunk_size = len(x)/n_cpu
                 result = []
                 # print(f"start: {int(i*chunk_size)} end: {int((i+1)*chunk_size)}")
-                for item in x[int(i*chunk_size):int((i+1)*chunk_size)]:
+                for item in tqdm(x[int(i*chunk_size):int((i+1)*chunk_size)]):
                     result.append(f(cfg, item))
                 return result
             subtasks.append(sub)
