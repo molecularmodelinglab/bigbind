@@ -82,7 +82,7 @@ def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
 OVERLAP_CUTOFF = 5
-@cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True)
+@cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)
 def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
@@ -234,6 +234,6 @@ def compute_all_tm_scores(cfg, item):
 
 def get_all_pocket_tm_scores(rec2pocketfile):
     pairs = get_all_rec_pairs(rec2pocketfile)
-    scores = poc_tm_outputs(pairs)
+    scores = compute_all_tm_scores(pairs)
     return postproc_tm_outputs(cfg, pairs, scores)
 
