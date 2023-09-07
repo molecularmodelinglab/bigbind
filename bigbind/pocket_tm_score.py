@@ -6,9 +6,9 @@ import numpy as np
 from functools import reduce, lru_cache
 from tqdm import tqdm
 from traceback import print_exc
-from utils import cache
 
-from utils.task import task, iter_task
+from utils.task import task, iter_task, simple_task
+from utils.cache import cache
 
 def get_all_res_nums(pocket_file):
     """ Return the set of all residue numbers in the pocket """
@@ -78,8 +78,8 @@ def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
 OVERLAP_CUTOFF = 5
-@cache(lambda r1, r2, r1_poc_file, r2_poc_file: (r1, r2))
-def pocket_tm_score(r1, r2, r1_poc_file, r2_poc_file):
+@cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2))
+def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
 
@@ -195,9 +195,8 @@ def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     ret = {}
     for (r1, r2, p1, p2), score in zip(all_pairs, tm_scores):
         ret[(r1, r2)] = score
-    return ret
 
-@iter_task
+@iter_task(600, 24*4)
 def compute_all_tm_scores(cfg, item):
     r1, r2, p1, p2 = item
     try:
