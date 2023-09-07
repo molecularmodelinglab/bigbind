@@ -160,7 +160,8 @@ def pocket_tm_score(r1_file, r2_file, r1_poc_file, r2_poc_file):
 
     return score
 
-def get_all_pocket_tm_scores(rec2pocketfile):
+@task()
+def get_all_pocket_tm_scores(cfg, rec2pocketfile):
     all_recs = list(rec2pocketfile.keys())
     all_pairs = [ (all_recs[i], all_recs[j]) for i in range(j) for j in range(len(all_recs))]
     ret = {}
@@ -168,3 +169,4 @@ def get_all_pocket_tm_scores(rec2pocketfile):
         p1 = rec2pocketfile[r1]
         p2 = rec2pocketfile[r2]
         ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
+    return ret
