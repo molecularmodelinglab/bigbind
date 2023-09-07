@@ -47,7 +47,6 @@ def get_bytes(a):
 def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, idx):
     fp_shm = shared_memory.SharedMemory(name=fp_shm_name)
     fps = np.ndarray(fp_shape, dtype=bool, buffer=fp_shm.buf)
-
     fp_sum_shm = shared_memory.SharedMemory(name=fp_sum_shm_name)
     fp_sum = np.ndarray(fp_sum_shape, dtype=int, buffer=fp_sum_shm.buf)
 
@@ -57,7 +56,7 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
     sims = inter_sum/(fp_sum + fp.sum() - inter_sum)
 
     # print(idx, (sims < 0.2).sum()/len(sims))
-
+    
     sims[sims < 0.4] = 0.0
     ssim = sparse.coo_matrix(sims)
 
@@ -65,8 +64,8 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
 
     return ssim
 
-TANIMOTO_CPUS = 64
-@task(max_runtime=12, n_cpu=TANIMOTO_CPUS, mem=32)
+TANIMOTO_CPUS = 16
+@task(max_runtime=24, n_cpu=TANIMOTO_CPUS, mem=32)
 def get_tanimoto_matrix(cfg, fps):
     try:
         fp_sum = fps.sum(-1)
