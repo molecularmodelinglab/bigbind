@@ -8,7 +8,7 @@ from tqdm import tqdm
 from traceback import print_exc
 from utils import cache
 
-from utils.task import task
+from utils.task import task, iter_task
 
 def get_all_res_nums(pocket_file):
     """ Return the set of all residue numbers in the pocket """
@@ -170,17 +170,47 @@ def pocket_tm_score(r1, r2, r1_poc_file, r2_poc_file):
 
     return score
 
-@task()
-def get_all_pocket_tm_scores(cfg, rec2pocketfile):
+# @task()
+# def get_all_pocket_tm_scores(cfg, rec2pocketfile):
+#     all_recs = list(rec2pocketfile.keys())
+#     all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
+#     ret = {}
+#     for r1, r2 in tqdm(all_pairs):
+#         p1 = rec2pocketfile[r1]
+#         p2 = rec2pocketfile[r2]
+#         try:
+#             ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
+#         except:
+#             print(f"Error computing TM score bwteen {r1} and {r2}")
+#             print_exc()
+#     return ret
+
+@simple_task
+def get_all_rec_pairs(cfg, rec2pocketfile):
     all_recs = list(rec2pocketfile.keys())
-    all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
+    return [ (all_recs[i], all_recs[j], rec2pocketfile[all_recs[i]], rec2pocketfile[all_recs[j]]) for j in range(len(all_recs)) for i in range(j) ]
+
+@simple_task
+def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     ret = {}
-    for r1, r2 in tqdm(all_pairs):
-        p1 = rec2pocketfile[r1]
-        p2 = rec2pocketfile[r2]
-        try:
-            ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
-        except:
-            print(f"Error computing TM score bwteen {r1} and {r2}")
-            print_exc()
+    for (r1, r2, p1, p2), score in zip(all_pairs, tm_scores):
+        ret[(r1, r2)] = score
     return ret
+
+@iter_task
+def compute_all_tm_scores(cfg, item):
+    r1, r2, p1, p2 = item
+    try:
+        return pocket_tm_score(cfg, r1, r2, p1, p2)
+    except KeyboardInterrupt:
+        raise
+    except:
+        print(f"Error computing TM score bewteen {r1} and {r2}")
+        print_exc()
+        return 0
+
+def get_all_pocket_tm_scores(rec2pocketfile):
+    pairs = get_all_rec_pairs(rec2pocketfile)
+    scores = poc_tm_outputs(pairs)
+    return postproc_tm_outputs(cfg, pairs, scores)
+
