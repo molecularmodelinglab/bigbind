@@ -58,13 +58,17 @@ def get_alpha_and_beta_coords(structure):
     # Print the NumPy array of alpha carbon coordinates
     return alpha_carbon_coordinates_array, beta_coords
 
-def get_aligned_coords(ref, other):
+def get_aligned_coords(ref, other, idx):
+
+    cur_ref = ref[idx]
+    cur_other = other[idx]
+
     # Calculate centroids
-    centroid_ref = np.mean(ref, axis=0)
-    centroid_other = np.mean(other, axis=0)
+    centroid_ref = np.mean(cur_ref, axis=0)
+    centroid_other = np.mean(cur_other, axis=0)
 
     # Calculate cross-covariance matrix
-    cross_covariance = np.dot((other - centroid_other).T, ref - centroid_ref)
+    cross_covariance = np.dot((cur_other - centroid_other).T, cur_ref - centroid_ref)
 
     # Perform SVD
     U, _, Vt = np.linalg.svd(cross_covariance)
@@ -78,7 +82,7 @@ def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
 OVERLAP_CUTOFF = 5
-@cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2))
+@cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True)
 def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
@@ -146,44 +150,64 @@ def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
 
     all_rec1_indexes = poc1_res.intersection({rec2_to_rec1[idx] for idx in poc2_res if idx in rec2_to_rec1})
     all_rec2_indexes = poc2_res.intersection({rec1_to_rec2[idx] for idx in poc1_res if idx in rec1_to_rec2})
-    all_rec1_indexes = { idx for idx in all_rec1_indexes if idx in rec1_to_rec2 }
-    all_rec2_indexes = { idx for idx in all_rec2_indexes if idx in rec2_to_rec1 }
-    
+    all_rec1_indexes = { idx for idx in all_rec1_indexes if idx in rec1_to_rec2 and rec1_to_rec2[idx] in all_rec2_indexes }
+    all_rec2_indexes = { idx for idx in all_rec2_indexes if idx in rec2_to_rec1 and rec2_to_rec1[idx] in all_rec1_indexes }
+
+    assert len(all_rec1_indexes) == len(all_rec2_indexes)
+
+
     # yeet outta here if the pockets don't overlap
     if len(all_rec1_indexes) < OVERLAP_CUTOFF:
         return 0.0
     
     all_rec1_indexes = np.array(sorted(all_rec1_indexes))
-    all_rec2_indexes = np.array(sorted(all_rec2_indexes))
+    all_rec2_indexes = np.array([rec1_to_rec2[idx] for idx in all_rec1_indexes])
 
     rec1_coords, rec1_beta = get_alpha_and_beta_coords(protein1_pdb)
     rec2_coords, rec2_beta = get_alpha_and_beta_coords(protein2_pdb)
 
+    # r1 = rec1_coords[all_rec1_indexes]
+    # r2 = rec2_coords[all_rec2_indexes]
+
     r1 = np.concatenate([rec1_coords[all_rec1_indexes], rec1_beta[all_rec1_indexes]], 0)
     r2 = np.concatenate([rec2_coords[all_rec2_indexes], rec2_beta[all_rec2_indexes]], 0)
-    aligned_r2 = get_aligned_coords(r1, r2)
 
-    L = r1.shape[0]
-    d = np.sqrt(((r1 - aligned_r2)**2).sum(-1))
-    d0 = (L**0.39)*np.sqrt(1 - 0.42 + 0.05*L*np.exp(-L/4.7) - 0.63*np.exp(-L/37)) - 0.75
-    score = (1/(1 + (d/d0)**2)).sum()/L
+    align_idx = np.ones(len(r1), dtype=np.bool)
+
+    for i in range(10):
+        aligned_r2 = get_aligned_coords(r1, r2, align_idx)
+
+        L = r1.shape[0]
+        d = np.sqrt(((r1 - aligned_r2)**2).sum(-1))
+
+        d0 = (L**0.39)*np.sqrt(1 - 0.42 + 0.05*L*np.exp(-L/4.7) - 0.63*np.exp(-L/37)) - 0.75
+        # the algorithm recommends only realigning the atoms below d0 distance. That can
+        # result in very few atoms to align, so we align the top third atoms
+        low_d = max(np.sort(d)[int(len(d)*0.3)], d0)
+
+        new_align_idx = d < low_d
+        if np.all(align_idx == new_align_idx):
+            break
+        align_idx = new_align_idx
+
+        score = (1/(1 + (d/d0)**2)).sum()/L
 
     return score
 
-# @task()
-# def get_all_pocket_tm_scores(cfg, rec2pocketfile):
-#     all_recs = list(rec2pocketfile.keys())
-#     all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
-#     ret = {}
-#     for r1, r2 in tqdm(all_pairs):
-#         p1 = rec2pocketfile[r1]
-#         p2 = rec2pocketfile[r2]
-#         try:
-#             ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
-#         except:
-#             print(f"Error computing TM score bwteen {r1} and {r2}")
-#             print_exc()
-#     return ret
+@task()
+def get_all_pocket_tm_scores(cfg, rec2pocketfile):
+    all_recs = list(rec2pocketfile.keys())
+    all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
+    ret = {}
+    for r1, r2 in tqdm(all_pairs):
+        p1 = rec2pocketfile[r1]
+        p2 = rec2pocketfile[r2]
+        try:
+            ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
+        except:
+            print(f"Error computing TM score bwteen {r1} and {r2}")
+            print_exc()
+    return ret
 
 @simple_task
 def get_all_rec_pairs(cfg, rec2pocketfile):
