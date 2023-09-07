@@ -185,12 +185,12 @@ def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
         # result in very few atoms to align, so we align the top third atoms
         low_d = max(np.sort(d)[int(len(d)*0.3)], d0)
 
+        score = (1/(1 + (d/d0)**2)).sum()/L
+
         new_align_idx = d < low_d
         if np.all(align_idx == new_align_idx):
             break
         align_idx = new_align_idx
-
-        score = (1/(1 + (d/d0)**2)).sum()/L
 
     return score
 
