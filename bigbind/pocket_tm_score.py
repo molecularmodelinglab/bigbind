@@ -235,5 +235,5 @@ def compute_all_tm_scores(cfg, item):
 def get_all_pocket_tm_scores(rec2pocketfile):
     pairs = get_all_rec_pairs(rec2pocketfile)
     scores = compute_all_tm_scores(pairs)
-    return postproc_tm_outputs(cfg, pairs, scores)
+    return postproc_tm_outputs(pairs, scores)
 
