@@ -42,6 +42,7 @@ class Workflow:
             def maybe_run_node(x):
                 if isinstance(x, WorkNode):
                     return self.run_node(cfg, x)
+                return x
             
             args = recursive_map(maybe_run_node, node.args)
             kwargs = recursive_map(maybe_run_node, node.kwargs)
@@ -101,3 +102,19 @@ class Workflow:
             levels.append(curr_level)
             curr_level = next_level
         return list(reversed(levels))
+
+if __name__ == "__main__":
+    from task import iter_task, simple_task
+    from cfg_utils import get_config
+
+    @simple_task
+    def test_input(cfg):
+        return list(range(100))
+
+    @iter_task(11, 5)
+    def test_iter(cfg, x):
+        return x*10
+
+    workflow = Workflow(test_iter(test_input()))
+    cfg = get_config("local")
+    print(workflow.run(cfg))
