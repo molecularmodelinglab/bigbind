@@ -1,7 +1,7 @@
 import ssl
 import urllib.request
 import os
-from task import Task
+from utils.task import Task
 
 # todo: disable. Something is up with chembl certs and this is the only fix rn
 ssl._create_default_https_context = ssl._create_unverified_context

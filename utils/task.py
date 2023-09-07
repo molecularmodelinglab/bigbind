@@ -2,7 +2,7 @@ from functools import wraps
 import os
 from typing import List, Dict, Any
 import pickle
-from utils import recursive_map
+from utils.utils import recursive_map
 
 class WorkNode:
     
@@ -231,6 +231,7 @@ def task(**kwargs):
     return wrapper
 
 def iter_task(n_cpu, max_runtime, **kwargs):
+    """ Creates n_cpu tasks that each run f on a partitioned array """
     def wrapper(f):
 
         subtasks = []

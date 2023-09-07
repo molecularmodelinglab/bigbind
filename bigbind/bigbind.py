@@ -13,15 +13,16 @@ from rdkit.Chem import Descriptors, AllChem
 import signal
 import requests
 from traceback import print_exc
+from Bio.PDB import PDBParser
 
-from cfg_utils import get_output_dir
-from workflow import Workflow
-from task import file_task, simple_task, task
-from downloads import StaticDownloadTask
-from pdb_to_mol import load_components_dict, mol_from_pdb
-from tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
-from pocket_tm_score import get_all_pocket_tm_scores
-from pdb_ligand import get_lig_url, save_pockets
+from utils.cfg_utils import get_output_dir
+from utils.workflow import Workflow
+from utils.task import file_task, simple_task, task
+from utils.downloads import StaticDownloadTask
+from bigbind.pdb_to_mol import load_components_dict, mol_from_pdb
+from bigbind.tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
+from bigbind.pocket_tm_score import get_all_pocket_tm_scores
+from bigbind.pdb_ligand import get_lig_url, save_pockets
 
 def canonicalize(mol):
 
@@ -573,6 +574,14 @@ def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
     return centers, sizes
 
 
+pdb_parser = PDBParser(QUIET=True)
+@task(max_runtime=2)
+def get_recfile_to_struct(rec_to_pocketfile):
+    ret = {}
+    for rec in rec_to_pocketfile.keys():
+        ret[rec] = pdb_parser.get_structure("1", rec)
+    return ret
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -632,7 +641,8 @@ def make_bigbind_workflow():
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
-    pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)
+    recfile2struct = get_recfile_to_struct(rec2pocketfile)
+    pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile, recfile2struct)
 
     return Workflow(
         pocket_tm_scores
@@ -646,7 +656,7 @@ def error(cfg):
 
 if __name__ == "__main__":
     import sys
-    from cfg_utils import get_config
+    from utils.cfg_utils import get_config
     workflow = make_bigbind_workflow()
     cfg = get_config(sys.argv[1])
 

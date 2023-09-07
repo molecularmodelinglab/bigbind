@@ -9,7 +9,7 @@ from tqdm import tqdm
 from rdkit import Chem
 from rdkit.Geometry import Point3D
 
-from task import task
+from utils.task import task
 
 @dataclass
 class PDBBond:

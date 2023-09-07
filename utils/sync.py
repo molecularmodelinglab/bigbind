@@ -1,7 +1,7 @@
 import sys
 import os
 import subprocess
-from cfg_utils import get_config
+from utils.cfg_utils import get_config
 
 def get_rsync_dir(cfg):
     dir = os.path.join(cfg.host.work_dir, cfg.run_name, "global")

@@ -1,8 +1,9 @@
 import sys
 import argparse
-from cfg_utils import get_config
-from bigbind import make_bigbind_workflow
-from slurm import submit_slurm_task
+
+from utils.cfg_utils import get_config
+from bgibind.bigbind import make_bigbind_workflow
+from utils.slurm import submit_slurm_task
 
 def run_single_node(cfg, workflow, node_index):
     node = workflow.nodes[node_index]

@@ -1,10 +1,12 @@
 from typing import Dict, Any, Callable
-from task import Task, WorkNode
 import networkx as nx
 from collections import defaultdict
-from utils import recursive_map
 from traceback import format_exc
 import requests
+
+
+from utils.task import Task, WorkNode
+from utils.utils import recursive_map
 
 class Workflow:
 

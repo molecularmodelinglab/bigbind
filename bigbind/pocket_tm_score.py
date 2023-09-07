@@ -6,7 +6,7 @@ import numpy as np
 from functools import reduce
 from tqdm import tqdm
 
-from task import task
+from utils.task import task
 
 def get_all_res_nums(pocket_file):
     """ Return the set of all residue numbers in the pocket """
@@ -72,16 +72,16 @@ def get_aligned_coords(ref, other):
 
 
 OVERLAP_CUTOFF = 5
-def pocket_tm_score(r1_file, r2_file, r1_poc_file, r2_poc_file):
+def pocket_tm_score(protein1_pdb, protein2_pdb, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
 
     # chatGPT helped with this lol
 
-    # Load PDB structures using PDB IDs
-    pdb_parser = PDBParser(QUIET=True)
-    protein1_pdb = pdb_parser.get_structure("1", r1_file)
-    protein2_pdb = pdb_parser.get_structure("2", r2_file)
+    # # Load PDB structures using PDB IDs
+    # pdb_parser = PDBParser(QUIET=True)
+    # protein1_pdb = pdb_parser.get_structure("1", r1_file)
+    # protein2_pdb = pdb_parser.get_structure("2", r2_file)
 
     # Align PDB structures based on the aligned sequences
     ppb = PPBuilder()
