@@ -5,6 +5,8 @@ from Bio.PDB.Polypeptide import PPBuilder, is_aa
 import numpy as np
 from functools import reduce, lru_cache
 from tqdm import tqdm
+from traceback import print_exc
+from utils import cache
 
 from utils.task import task
 
@@ -76,6 +78,7 @@ def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
 OVERLAP_CUTOFF = 5
+@cache(lambda r1, r2, r1_poc_file, r2_poc_file: (r1, r2))
 def pocket_tm_score(r1, r2, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
@@ -175,5 +178,9 @@ def get_all_pocket_tm_scores(cfg, rec2pocketfile):
     for r1, r2 in tqdm(all_pairs):
         p1 = rec2pocketfile[r1]
         p2 = rec2pocketfile[r2]
-        ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
+        try:
+            ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
+        except:
+            print(f"Error computing TM score bwteen {r1} and {r2}")
+            print_exc()
     return ret
