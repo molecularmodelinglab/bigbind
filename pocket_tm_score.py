@@ -5,9 +5,20 @@ from Bio.PDB.Polypeptide import PPBuilder, is_aa
 import numpy as np
 from functools import reduce
 
-from probis import get_all_res_nums
+def get_all_res_nums(pocket_file):
+    """ Return the set of all residue numbers in the pocket """
+    ret = set()
+    with open(pocket_file, "r") as f:
+        for line in f.readlines():
+            if line.startswith("ATOM"):
+                resn = int(line[22:26])
+                ret.add(resn)
+
+    return ret
 
 def get_alpha_and_beta_coords(structure):
+    """ Returns the coords (as np arrays) of both the alpha carbons
+    and (virtual) beta carbons for the structure """
     alpha_carbon_coordinates = []
     beta_coords = []
 
@@ -60,7 +71,7 @@ def get_aligned_coords(ref, other):
 OVERLAP_CUTOFF = 5
 def pocket_tm_score(r1_file, r2_file, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
-    of the pocket resiues (using Calpha and idealized Cbeta coords) """
+    of the pocket residues (using Calpha and idealized Cbeta coords) """
 
     # chatGPT helped with this lol
 
@@ -148,3 +159,12 @@ def pocket_tm_score(r1_file, r2_file, r1_poc_file, r2_poc_file):
     score = (1/(1 + (d/d0)**2)).sum()/L
 
     return score
+
+def get_all_pocket_tm_scores(rec2pocketfile):
+    all_recs = list(rec2pocketfile.keys())
+    all_pairs = [ (all_recs[i], all_recs[j]) for i in range(j) for j in range(len(all_recs))]
+    ret = {}
+    for r1, r2 in all_pairs:
+        p1 = rec2pocketfile[r1]
+        p2 = rec2pocketfile[r2]
+        ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
