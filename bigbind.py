@@ -545,7 +545,7 @@ def save_all_structures(cfg,
 
     return my_pocket2recs, my_pocket2ligs, my_ligfile2lig, my_ligfile2uff_lig
 
-@task(num_outputs=2)
+@task(max_runtime=3, num_outputs=2)
 def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
     """ """
     rec2pocketfile = {}

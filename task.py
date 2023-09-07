@@ -118,8 +118,15 @@ class Task:
         the input data) and write to the out_filename"""
         raise NotImplementedError
 
+    # def get_cache_str(self, *args, **kwargs):
+    #     """ Override if you want to make tasks that cache
+    #     multiple args. Returns either None or a str """
+    #     return None
+
     def get_completed_filename(self, cfg):
-        return os.path.join(self.get_out_folder(cfg), "completed.txt")
+        # cache_str = self.get_cache_str(*args, **kwargs)
+        # postfix = "" if cache_str is None else f"_{cache_str}"
+        return os.path.join(self.get_out_folder(cfg), f"completed.txt")
 
     def is_finished(self, cfg):
         """ Returns true if we can just call get_output directly,
@@ -187,8 +194,10 @@ def file_task(out_filename_rel, *args, **kwargs):
 class SimpleTask(Task):
     """ Tasks that either run very quickly or do their own caching """
 
-    def __init__(self, func):
-        super().__init__(func.__name__, None, simple=True)
+    def __init__(self, func, name=None):
+        if name is None:
+            name = func.__name__
+        super().__init__(name, None, simple=True)
         self.func = func
 
     def run(self, *args, **kwargs):
@@ -200,8 +209,11 @@ def simple_task(f):
 class PickleTask(Task):
     """ The default task. Saves a pickle of the function output """
 
-    def __init__(self, func, *args, **kwargs):
-        super().__init__(func.__name__, "output.pkl", *args, **kwargs)
+    def __init__(self, func,  **kwargs):
+        name = kwargs["name"] if "name" in kwargs else func.__name__
+        if "name" in kwargs:
+            del kwargs["name"]
+        super().__init__(name, "output.pkl", **kwargs)
         self.func = func
 
     def run(self, cfg, *args, **kwargs):
@@ -213,7 +225,39 @@ class PickleTask(Task):
         with open(self.get_out_filename(cfg), "rb") as f:
             return pickle.load(f)
 
-def task(*args, **kwargs):
+def task(**kwargs):
     def wrapper(f):
-        return wraps(f)(PickleTask(f, *args, **kwargs))
+        return wraps(f)(PickleTask(f, **kwargs))
+    return wrapper
+
+def iter_task(n_cpu, max_runtime, **kwargs):
+    def wrapper(f):
+
+        subtasks = []
+        for i in range(n_cpu):
+            @task(max_runtime=max_runtime/n_cpu, name=f"{f.__name__}_{i}", **kwargs)
+            def sub(cfg, i, x):
+                chunk_size = len(x)/n_cpu
+                result = []
+                # print(f"start: {int(i*chunk_size)} end: {int((i+1)*chunk_size)}")
+                for item in x[int(i*chunk_size):int((i+1)*chunk_size)]:
+                    result.append(f(cfg, item))
+                return result
+            subtasks.append(sub)
+
+        def finalize(cfg, subtask_results):
+            results = []
+            for arr in subtask_results:
+                for item in arr:
+                    results.append(item)
+            return results
+        finalize = SimpleTask(finalize, f"{f.__name__}_finalize")
+
+        def ret(x):
+            subtask_results = []
+            for i in range(n_cpu):
+                subtask_results.append(subtasks[i](i, x))
+            return finalize(subtask_results)
+        return ret
+
     return wrapper
