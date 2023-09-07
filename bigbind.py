@@ -640,9 +640,10 @@ def error(cfg):
     raise Exception("!! This is a test !!")
 
 if __name__ == "__main__":
+    import sys
     from cfg_utils import get_config
     workflow = make_bigbind_workflow()
-    cfg = get_config("local")
+    cfg = get_config(sys.argv[1])
 
     # workflow = Workflow(error())
     # workflow.run_node(cfg, workflow.nodes[0])
