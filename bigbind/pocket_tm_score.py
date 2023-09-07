@@ -32,7 +32,7 @@ def get_alpha_and_beta_coords(structure):
     for model in structure:
         for chain in model:
             for residue in chain:
-                if "CA" in residue:
+                if "CA" in residue and "N" in residue:
                     alpha_carbon = residue["CA"]  # Standard amino acids
                     alpha_carbon_coordinates.append(alpha_carbon.get_coord())
 
@@ -84,8 +84,8 @@ def pocket_tm_score(r1, r2, r1_poc_file, r2_poc_file):
 
     # # Load PDB structures using PDB IDs
     # pdb_parser = PDBParser(QUIET=True)
-    protein1_pdb = get_struct(r1_file)
-    protein2_pdb = get_struct(r2_file)
+    protein1_pdb = get_struct(r1)
+    protein2_pdb = get_struct(r2)
 
     # Align PDB structures based on the aligned sequences
     ppb = PPBuilder()
