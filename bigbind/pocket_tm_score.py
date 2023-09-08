@@ -220,7 +220,7 @@ def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     for (r1, r2, p1, p2), score in zip(all_pairs, tm_scores):
         ret[(r1, r2)] = score
 
-@iter_task(600, 24*4*600, n_cpu=16, mem=32)
+# @iter_task(600, 24*4*600, n_cpu=16, mem=32)
 def compute_single_tm_score(cfg, item):
     r1, r2, p1, p2 = item
     try:
@@ -232,7 +232,7 @@ def compute_single_tm_score(cfg, item):
         print_exc()
         return 0
 
-compute_all_tm_scores = iter_task(600, 24*4*600, n_cpu=16, mem=32)(compute_single_tm_score)
+compute_all_tm_scores = iter_task(600, 12*600, n_cpu=16, mem=32)(compute_single_tm_score)
 
 def get_all_pocket_tm_scores(rec2pocketfile):
     pairs = get_all_rec_pairs(rec2pocketfile)

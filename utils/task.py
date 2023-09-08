@@ -1,5 +1,6 @@
 from functools import wraps, partial
 import os
+import pickle
 from typing import List, Dict, Any
 from tqdm import tqdm
 import pickle
@@ -249,9 +250,6 @@ def iter_task(n_tasks, max_runtime, **kwargs):
                 f_partial = partial(f, cfg)
                 with Pool(n_cpu) as p:
                     result = list(tqdm(p.imap(f_partial, x_chunked), total=len(x_chunked)))
-                # print(f"start: {int(i*chunk_size)} end: {int((i+1)*chunk_size)}")
-                # for item in tqdm():
-                #     result.append(f(cfg, item))
                 return result
             subtasks.append(sub)
 
