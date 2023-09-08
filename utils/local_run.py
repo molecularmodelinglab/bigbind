@@ -22,6 +22,7 @@ async def submit_task(cfg, workflow, node, prereq_procs):
     index = workflow.nodes.index(node)
 
     log_dir = os.path.join(cfg.host.work_dir, cfg.run_name, "logs")
+    os.makedirs(log_dir, exist_ok=True)
     out_file = os.path.join(log_dir, node.task.name + ".out")
     err_file = os.path.join(log_dir, node.task.name + ".err")
 
