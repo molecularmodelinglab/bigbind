@@ -232,7 +232,7 @@ def compute_single_tm_score(cfg, item):
         print_exc()
         return 0
 
-compute_all_tm_scores = iter_task(1000, 24*1000, n_cpu=16, mem=32)(compute_single_tm_score)
+compute_all_tm_scores = iter_task(1000, 24*4*1000, n_cpu=8, mem=32)(compute_single_tm_score)
 
 def get_all_pocket_tm_scores(rec2pocketfile):
     pairs = get_all_rec_pairs(rec2pocketfile)
