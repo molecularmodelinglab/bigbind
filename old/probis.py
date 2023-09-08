@@ -5,7 +5,7 @@ import os
 from tqdm import tqdm
 from traceback import print_exc
 
-from cache import cache
+from old.cache import cache
 
 def get_all_res_nums(pocket_file):
     """ Return the set of all residue numbers in the pocket """

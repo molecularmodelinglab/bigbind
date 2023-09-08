@@ -34,7 +34,7 @@ def get_alpha_and_beta_coords(structure):
     for model in structure:
         for chain in model:
             for residue in chain:
-                if "CA" in residue and "N" and "C" in residue:
+                if "CA" in residue and "N" in residue and "C" in residue:
                     alpha_carbon = residue["CA"]  # Standard amino acids
                     alpha_carbon_coordinates.append(alpha_carbon.get_coord())
 
@@ -232,7 +232,7 @@ def compute_single_tm_score(cfg, item):
         print_exc()
         return 0
 
-compute_all_tm_scores = iter_task(1000, 12*1000, n_cpu=16, mem=32)(compute_single_tm_score)
+compute_all_tm_scores = iter_task(1000, 24*1000, n_cpu=16, mem=32)(compute_single_tm_score)
 
 def get_all_pocket_tm_scores(rec2pocketfile):
     pairs = get_all_rec_pairs(rec2pocketfile)

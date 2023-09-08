@@ -21,6 +21,12 @@ if __name__ == "__main__":
 
     dir1 = get_rsync_dir(cfg1)
     dir2 = get_rsync_dir(cfg2)
+
+    if len(sys.argv) > 3:
+        func = sys.argv[3]
+        dir1 = os.path.join(dir1, func)
+        dir2 = os.path.join(dir2, func)
+
     dir2 = os.path.dirname(dir2)
 
     cmd = f"rsync -r {dir1} {dir2}"
