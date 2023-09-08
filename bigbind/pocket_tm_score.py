@@ -221,7 +221,7 @@ def postproc_tm_outputs(cfg, all_pairs, tm_scores):
         ret[(r1, r2)] = score
 
 @iter_task(600, 24*4*600, n_cpu=16, mem=32)
-def compute_all_tm_scores(cfg, item):
+def compute_single_tm_score(cfg, item):
     r1, r2, p1, p2 = item
     try:
         return pocket_tm_score(cfg, r1, r2, p1, p2)
@@ -231,6 +231,8 @@ def compute_all_tm_scores(cfg, item):
         print(f"Error computing TM score bewteen {r1} and {r2}")
         print_exc()
         return 0
+
+compute_all_tm_scores = iter_task(600, 24*4*600, n_cpu=16, mem=32)(compute_single_tm_score)
 
 def get_all_pocket_tm_scores(rec2pocketfile):
     pairs = get_all_rec_pairs(rec2pocketfile)
