@@ -1,8 +1,10 @@
-from functools import wraps
+from functools import wraps, partial
 import os
 from typing import List, Dict, Any
 from tqdm import tqdm
 import pickle
+from multiprocessing import Pool
+
 from utils.utils import recursive_map
 
 class WorkNode:
@@ -231,19 +233,25 @@ def task(**kwargs):
         return wraps(f)(PickleTask(f, **kwargs))
     return wrapper
 
-def iter_task(n_cpu, max_runtime, **kwargs):
+def iter_task(n_tasks, max_runtime, **kwargs):
     """ Creates n_cpu tasks that each run f on a partitioned array """
+    
+    n_cpu = kwargs.get("n_cpu", 1)
+
     def wrapper(f):
 
         subtasks = []
-        for i in range(n_cpu):
-            @task(max_runtime=max_runtime/n_cpu, name=f"{f.__name__}_{i}", **kwargs)
+        for i in range(n_tasks):
+            @task(max_runtime=max_runtime/n_tasks, name=f"{f.__name__}_{i}", **kwargs)
             def sub(cfg, i, x):
-                chunk_size = len(x)/n_cpu
-                result = []
+                chunk_size = len(x)/n_tasks
+                x_chunked = x[int(i*chunk_size):int((i+1)*chunk_size)]
+                f_partial = partial(f, cfg)
+                with Pool(n_cpu) as p:
+                    result = list(tqdm(p.imap(f_partial, x_chunked), total=len(x_chunked)))
                 # print(f"start: {int(i*chunk_size)} end: {int((i+1)*chunk_size)}")
-                for item in tqdm(x[int(i*chunk_size):int((i+1)*chunk_size)]):
-                    result.append(f(cfg, item))
+                # for item in tqdm():
+                #     result.append(f(cfg, item))
                 return result
             subtasks.append(sub)
 
@@ -257,7 +265,7 @@ def iter_task(n_cpu, max_runtime, **kwargs):
 
         def ret(x):
             subtask_results = []
-            for i in range(n_cpu):
+            for i in range(n_tasks):
                 subtask_results.append(subtasks[i](i, x))
             return finalize(subtask_results)
         return ret

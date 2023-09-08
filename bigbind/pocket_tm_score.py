@@ -77,12 +77,12 @@ def get_aligned_coords(ref, other, idx):
     return np.dot(rotation_matrix, (other - centroid_other).T).T + centroid_ref
 
 pdb_parser = PDBParser(QUIET=True)
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=32)
 def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
 OVERLAP_CUTOFF = 5
-@cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)
+# @cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)
 def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
@@ -220,7 +220,7 @@ def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     for (r1, r2, p1, p2), score in zip(all_pairs, tm_scores):
         ret[(r1, r2)] = score
 
-@iter_task(600, 24*4*600, mem=32)
+@iter_task(600, 24*4*600, n_cpu=16, mem=32)
 def compute_all_tm_scores(cfg, item):
     r1, r2, p1, p2 = item
     try:
