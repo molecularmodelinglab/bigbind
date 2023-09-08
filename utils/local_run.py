@@ -1,4 +1,5 @@
 import sys
+import os
 import argparse
 import asyncio
 
@@ -18,6 +19,12 @@ def submit_single_task(cfg, workflow, node):
 async def submit_task(cfg, workflow, node, prereq_procs):
     await asyncio.gather(*prereq_procs)
 
+    index = workflow.nodes.index(node)
+
+    log_dir = os.path.join(cfg.host.work_dir, cfg.run_name, "logs")
+    out_file = os.path.join(log_dir, node.task.name + ".out")
+    err_file = os.path.join(log_dir, node.task.name + ".err")
+
     run_cmds = []
     if "pre_command" in cfg.host:
         run_cmds.append(cfg.host.pre_command)
@@ -25,7 +32,7 @@ async def submit_task(cfg, workflow, node, prereq_procs):
     run_cmds.append(f"python -m utils.local_run {cfg.host.name} -n {index}")
     run_cmds = " && ".join(run_cmds)
 
-    cmd = f"cd ~ && {run_cmds}"
+    cmd = f" ( {run_cmds} ) 1> {out_file} 2> {err_file} "
     print(f" Running {cmd}")
 
     proc = await asyncio.create_subprocess_shell(
@@ -67,11 +74,11 @@ async def submit_tasks(cfg, workflow, task_names):
         if "slurm" in cfg.host:
             node2job_id[node] = submit_slurm_task(cfg, workflow, node, job_ids)
         else:
-            node2job_id[node] = submit_task(cfg, workflow, node, job_id)
+            node2job_id[node] = asyncio.create_task(submit_task(cfg, workflow, node, job_ids))
         to_search.remove(node)
 
-    if "slurm" in cfg.host:
-        asyncio.gather(*node2job_id.values())
+    if "slurm" not in cfg.host:
+        await asyncio.gather(*node2job_id.values())
 
     # for level in workflow.get_levels(final_nodes):
     #     for node in level:

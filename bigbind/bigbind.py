@@ -582,6 +582,14 @@ def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
 #         ret[rec] = pdb_parser.get_structure("1", rec)
 #     return ret
 
+@task()
+def task1(cfg):
+    print("!!!1!!!")
+
+@task()
+def task2(cfg, x):
+    print("!!!2!!!")
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -643,6 +651,9 @@ def make_bigbind_workflow():
 
     # recfile2struct = get_recfile_to_struct(rec2pocketfile)
     pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)
+
+    # x = task1()
+    # y = task2(x)
 
     return Workflow(
         pocket_tm_scores
