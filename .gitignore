@@ -7,6 +7,7 @@
 *.out
 *.err
 logs
+tmp
 
 *.pdb
 *.json

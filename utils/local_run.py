@@ -1,5 +1,6 @@
 import sys
 import argparse
+import asyncio
 
 from utils.cfg_utils import get_config
 from bigbind.bigbind import make_bigbind_workflow
@@ -12,9 +13,29 @@ def run_single_node(cfg, workflow, node_index):
 def submit_single_task(cfg, workflow, node):
     """ Submit a single task (currently to SLURM) """
     submit_slurm_task(cfg, workflow, node)
+    
 
+async def submit_task(cfg, workflow, node, prereq_procs):
+    await asyncio.gather(*prereq_procs)
 
-def submit_tasks(cfg, workflow, task_names):
+    run_cmds = []
+    if "pre_command" in cfg.host:
+        run_cmds.append(cfg.host.pre_command)
+    run_cmds.append(f"cd {cfg.host.repo_dir}")
+    run_cmds.append(f"python -m utils.local_run {cfg.host.name} -n {index}")
+    run_cmds = " && ".join(run_cmds)
+
+    cmd = f"cd ~ && {run_cmds}"
+    print(f" Running {cmd}")
+
+    proc = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE)
+
+    return await proc.communicate()
+
+async def submit_tasks(cfg, workflow, task_names):
     """ Submits (either by running directly or using SLURM) the task
     and all its ancestor tasks, respecting dependencies """
     final_nodes = []
@@ -42,9 +63,15 @@ def submit_tasks(cfg, workflow, task_names):
         print("\n----")
         print(f"Running {node} with dependencies {job_ids}")
         print("----")
-        node2job_id[node] = submit_slurm_task(cfg, workflow, node, job_ids)
+
+        if "slurm" in cfg.host:
+            node2job_id[node] = submit_slurm_task(cfg, workflow, node, job_ids)
+        else:
+            node2job_id[node] = submit_task(cfg, workflow, node, job_id)
         to_search.remove(node)
 
+    if "slurm" in cfg.host:
+        asyncio.gather(*node2job_id.values())
 
     # for level in workflow.get_levels(final_nodes):
     #     for node in level:
@@ -73,6 +100,6 @@ if __name__ == "__main__":
         task_names = workflow.get_output_task_names() if args.task_name is None else [ args.task_name ]
 
         if args.submit:
-            submit_tasks(cfg, workflow, task_names)
+            asyncio.run(submit_tasks(cfg, workflow, task_names))
         else:
             raise NotImplementedError
