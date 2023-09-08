@@ -38,8 +38,7 @@ def submit_slurm_task(cfg, workflow, node, prereq_job_ids):
     if "pre_command" in cfg.host:
         run_cmds.append(cfg.host.pre_command)
     run_cmds.append(f"cd {cfg.host.repo_dir}")
-
-    run_cmds.append(f"python local_run.py {cfg.host.name} -n {index}")
+    run_cmds.append(f"python -m utils.local_run {cfg.host.name} -n {index}")
     run_cmds = " && ".join(run_cmds)
 
     cmd = f"cd ~ && echo '#!/bin/bash\n {run_cmds}' | sbatch {sbatch_args}"

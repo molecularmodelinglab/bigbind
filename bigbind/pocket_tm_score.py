@@ -77,7 +77,7 @@ def get_aligned_coords(ref, other, idx):
     return np.dot(rotation_matrix, (other - centroid_other).T).T + centroid_ref
 
 pdb_parser = PDBParser(QUIET=True)
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=128)
 def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
@@ -220,7 +220,7 @@ def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     for (r1, r2, p1, p2), score in zip(all_pairs, tm_scores):
         ret[(r1, r2)] = score
 
-@iter_task(600, 24*4*600, mem=6)
+@iter_task(600, 24*4*600, mem=32)
 def compute_all_tm_scores(cfg, item):
     r1, r2, p1, p2 = item
     try:
