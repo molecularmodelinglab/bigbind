@@ -81,7 +81,7 @@ pdb_parser = PDBParser(QUIET=True)
 def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
-@task(max_runtime=3, mem=64, num_outputs=2)
+@task(max_runtime=3, mem=128, num_outputs=2)
 def get_all_structs_and_res_nums(cfg, rec2pocketfile):
     structs = {}
     res_nums = {}
@@ -247,8 +247,7 @@ def compute_single_tm_score(cfg, item):
         return 0
 
 # compute_all_tm_scores = iter_task(1000, 48*1000, n_cpu=8, mem=32)(compute_single_tm_score)
-compute_all_tm_scores = iter_task(64, 96*64, n_cpu=8, mem=32)(compute_single_tm_score)
-
+compute_all_tm_scores = iter_task(1, 48, n_cpu=224, mem=128)(compute_single_tm_score)
 
 def get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num):
     pairs = get_all_rec_pairs(rec2pocketfile, recfile2struct, pocfile2res_num)
