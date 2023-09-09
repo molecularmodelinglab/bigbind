@@ -81,7 +81,8 @@ pdb_parser = PDBParser(QUIET=True)
 def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
-@task(max_runtime=3, mem=128, num_outputs=2)
+@simple_task
+# @task(max_runtime=3, mem=128, num_outputs=2)
 def get_all_structs_and_res_nums(cfg, rec2pocketfile):
     structs = {}
     res_nums = {}

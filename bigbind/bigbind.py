@@ -590,6 +590,15 @@ def task1(cfg):
 def task2(cfg, x):
     print("!!!2!!!")
 
+@simple_task
+def reduce_recfiles(cfg, rec2pocketfile):
+    ret = {}
+    for i, (rf, pf) in rec2pocketfile.items():
+        ret[rf] = pf
+        if i > 200:
+            break
+    return ret
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -648,6 +657,8 @@ def make_bigbind_workflow():
 
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
+
+    rec2pocketfile = reduce_recfiles(rec2pocketfile)
 
     recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
     pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num)
