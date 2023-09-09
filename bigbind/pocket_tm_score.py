@@ -90,6 +90,7 @@ def get_all_structs_and_res_nums(cfg, rec2pocketfile):
         structs[rf] = get_struct(rf)
         res_nums[pf] = get_all_res_nums(pf)
     return structs, res_nums
+get_all_structs_and_res_nums.num_outputs = 2
 
 OVERLAP_CUTOFF = 5
 # @cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)
@@ -224,7 +225,7 @@ def get_all_rec_pairs(cfg, rec2pocketfile, recfile2struct, pocfile2res_num):
     all_recs = list(rec2pocketfile.keys())
     return [ (all_recs[i],
               all_recs[j],
-              recfile2sturct[all_recs[i]], 
+              recfile2struct[all_recs[i]], 
               recfile2struct[all_recs[j]],
               pocfile2res_num[rec2pocketfile[all_recs[i]]],
               pocfile2res_num[rec2pocketfile[all_recs[j]]]) for j in range(len(all_recs)) for i in range(j) ]

@@ -593,7 +593,7 @@ def task2(cfg, x):
 @simple_task
 def reduce_recfiles(cfg, rec2pocketfile):
     ret = {}
-    for i, (rf, pf) in rec2pocketfile.items():
+    for i, (rf, pf) in enumerate(rec2pocketfile.items()):
         ret[rf] = pf
         if i > 200:
             break
@@ -667,7 +667,7 @@ def make_bigbind_workflow():
     # y = task2(x)
 
     return Workflow(
-        recfile2struct
+        pocket_tm_scores
         # pocket_tm_scores
         # pocket_centers,
         # lig_sim_mat
