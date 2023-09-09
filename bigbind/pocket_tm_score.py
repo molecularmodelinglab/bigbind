@@ -267,7 +267,7 @@ def get_all_pocket_tm_scores(cfg, rec2pocketfile):
             s2 = get_struct(rf2)
             rn2 = get_all_res_nums(pf2)
             try:
-                ret[(rf1, rf2)] = pocket_tm_score(s1, s2, rn1, rn2)
+                ret[(rf1, rf2)] = pocket_tm_score(cfg, s1, s2, rn1, rn2)
             except:
                 print(f"Error computing TM score bwteen {rf1} and {rf2}")
                 print_exc()
