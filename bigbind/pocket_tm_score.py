@@ -286,8 +286,10 @@ def compute_rec_tm_score(cfg, item):
         rn2 = get_all_res_nums(pf2)
         try:
             ret[(rf1, rf2)] = pocket_tm_score(cfg, s1, s2, rn1, rn2)
+        except KeyboardInterrupt:
+            raise
         except:
-            print(f"Error computing TM score bwteen {rf1} and {rf2}")
+            print(f"Error computing TM score bwteen {rf1} and {rf2}", file=sys.stderr))
             print_exc()
     return ret
 
@@ -295,7 +297,7 @@ compute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_scor
 
 @simple_task
 def get_tm_score_inputs(cfg, rec2pocketfile):
-    print(f"Processiong {len(rec2pocketfile)} files")
+    print(f"Processing {len(rec2pocketfile)} files")
     ret = []
     for i, rf1 in enumerate(rec2pocketfile):
         ret.append((i, rf1, rec2pocketfile))
