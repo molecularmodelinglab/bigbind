@@ -256,7 +256,7 @@ compute_all_tm_scores = iter_task(1, 48, n_cpu=224, mem=128)(compute_single_tm_s
 #     scores = compute_all_tm_scores(pairs)
 #     return postproc_tm_outputs(pairs, scores)
 
-@task
+@task()
 def get_all_pocket_tm_scores(rec2pocketfile):
     ret = {}
     for i, (rf1, pf1) in enumerate(rec2pocketfile.items()):
