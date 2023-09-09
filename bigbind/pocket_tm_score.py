@@ -262,7 +262,7 @@ def get_all_pocket_tm_scores(cfg, rec2pocketfile):
     for i, (rf1, pf1) in enumerate(rec2pocketfile.items()):
         s1 = get_struct(rf1)
         rn1 = get_all_res_nums(pf1)
-        for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items())):
+        for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
             if j >= i: continue
             s2 = get_struct(rf2)
             rn2 = get_all_res_nums(pf2)
