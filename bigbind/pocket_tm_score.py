@@ -3,6 +3,7 @@ from Bio import pairwise2
 from Bio.PDB import PDBParser
 from Bio.PDB.Polypeptide import PPBuilder, is_aa
 import numpy as np
+import sys
 from functools import reduce, lru_cache
 from tqdm import tqdm
 from traceback import print_exc
@@ -91,7 +92,7 @@ def get_all_structs_and_res_nums(cfg, rec2pocketfile):
 
 OVERLAP_CUTOFF = 5
 # @cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)
-def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
+def pocket_tm_score(cfg, protein1_pdb, protein2_pdb, poc1_res, poc2_res):
     """ Aligns just the pockets of r1 and r2 and returns the TM score
     of the pocket residues (using Calpha and idealized Cbeta coords) """
 
@@ -99,8 +100,8 @@ def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
 
     # # Load PDB structures using PDB IDs
     # pdb_parser = PDBParser(QUIET=True)
-    protein1_pdb = get_struct(r1)
-    protein2_pdb = get_struct(r2)
+    # protein1_pdb = get_struct(r1)
+    # protein2_pdb = get_struct(r2)
 
     # Align PDB structures based on the aligned sequences
     ppb = PPBuilder()
@@ -151,8 +152,8 @@ def pocket_tm_score(cfg, r1, r2, r1_poc_file, r2_poc_file):
         if res2 != '-':
             s2 += 1
 
-    poc1_res = get_all_res_nums(r1_poc_file)
-    poc2_res = get_all_res_nums(r2_poc_file)
+    # poc1_res = get_all_res_nums(r1_poc_file)
+    # poc2_res = get_all_res_nums(r2_poc_file)
     poc1_res = { seq_index_mapping1[i] for i in poc1_res }
     poc2_res = { seq_index_mapping2[i] for i in poc2_res }
 
@@ -218,25 +219,30 @@ def get_all_pocket_tm_scores(cfg, rec2pocketfile):
     return ret
 
 @simple_task
-def get_all_rec_pairs(cfg, rec2pocketfile):
+def get_all_rec_pairs(cfg, rec2pocketfile, recfile2struct, pocfile2res_num):
     all_recs = list(rec2pocketfile.keys())
-    return [ (all_recs[i], all_recs[j], rec2pocketfile[all_recs[i]], rec2pocketfile[all_recs[j]]) for j in range(len(all_recs)) for i in range(j) ]
+    return [ (all_recs[i],
+              all_recs[j],
+              recfile2sturct[all_recs[i]], 
+              recfile2struct[all_recs[j]],
+              pocfile2res_num[rec2pocketfile[all_recs[i]]],
+              pocfile2res_num[rec2pocketfile[all_recs[j]]]) for j in range(len(all_recs)) for i in range(j) ]
 
 @simple_task
 def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     ret = {}
-    for (r1, r2, p1, p2), score in zip(all_pairs, tm_scores):
+    for (r1, r2, *rest), score in zip(all_pairs, tm_scores):
         ret[(r1, r2)] = score
 
 # @iter_task(600, 24*4*600, n_cpu=16, mem=32)
 def compute_single_tm_score(cfg, item):
-    r1, r2, p1, p2 = item
+    r1, r2, s1, s2, p1, p2 = item
     try:
-        return pocket_tm_score(cfg, r1, r2, p1, p2)
+        return pocket_tm_score(cfg, s1, s2, p1, p2)
     except KeyboardInterrupt:
         raise
     except:
-        print(f"Error computing TM score bewteen {r1} and {r2}")
+        print(f"Error computing TM score bewteen {r1} and {r2}", file=sys.stderr)
         print_exc()
         return 0
 
@@ -244,8 +250,8 @@ def compute_single_tm_score(cfg, item):
 compute_all_tm_scores = iter_task(64, 96*64, n_cpu=8, mem=32)(compute_single_tm_score)
 
 
-def get_all_pocket_tm_scores(rec2pocketfile):
-    pairs = get_all_rec_pairs(rec2pocketfile)
+def get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num):
+    pairs = get_all_rec_pairs(rec2pocketfile, recfile2struct, pocfile2res_num)
     scores = compute_all_tm_scores(pairs)
     return postproc_tm_outputs(pairs, scores)
 

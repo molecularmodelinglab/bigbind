@@ -650,7 +650,7 @@ def make_bigbind_workflow():
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
     recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
-    pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)
+    pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num)
 
     # x = task1()
     # y = task2(x)
