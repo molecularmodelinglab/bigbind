@@ -276,6 +276,7 @@ compute_all_tm_scores = iter_task(1, 48, n_cpu=224, mem=128)(compute_single_tm_s
 
 def compute_rec_tm_score(cfg, item):
     i, rf1, rec2pocketfile = item
+    pf1 = rec2pocketfile[rf1]
     ret = {}
     s1 = get_struct(rf1)
     rn1 = get_all_res_nums(pf1)
