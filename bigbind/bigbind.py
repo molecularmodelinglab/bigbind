@@ -658,10 +658,10 @@ def make_bigbind_workflow():
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
-    rec2pocketfile = reduce_recfiles(rec2pocketfile)
+    # rec2pocketfile = reduce_recfiles(rec2pocketfile)
 
-    recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
-    pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num)
+    # recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
+    pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)# , recfile2struct, pocfile2res_num)
 
     # x = task1()
     # y = task2(x)

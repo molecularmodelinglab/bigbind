@@ -205,20 +205,20 @@ def pocket_tm_score(cfg, protein1_pdb, protein2_pdb, poc1_res, poc2_res):
 
     return score
 
-@task()
-def get_all_pocket_tm_scores(cfg, rec2pocketfile):
-    all_recs = list(rec2pocketfile.keys())
-    all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
-    ret = {}
-    for r1, r2 in tqdm(all_pairs):
-        p1 = rec2pocketfile[r1]
-        p2 = rec2pocketfile[r2]
-        try:
-            ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
-        except:
-            print(f"Error computing TM score bwteen {r1} and {r2}")
-            print_exc()
-    return ret
+# @task()
+# def get_all_pocket_tm_scores(cfg, rec2pocketfile):
+#     all_recs = list(rec2pocketfile.keys())
+#     all_pairs = [ (all_recs[i], all_recs[j]) for j in range(len(all_recs)) for i in range(j) ]
+#     ret = {}
+#     for r1, r2 in tqdm(all_pairs):
+#         p1 = rec2pocketfile[r1]
+#         p2 = rec2pocketfile[r2]
+#         try:
+#             ret[(r1, r2)] = pocket_tm_score(r1, r2, p1, p2)
+#         except:
+#             print(f"Error computing TM score bwteen {r1} and {r2}")
+#             print_exc()
+#     return ret
 
 @simple_task
 def get_all_rec_pairs(cfg, rec2pocketfile, recfile2struct, pocfile2res_num):
@@ -251,8 +251,25 @@ def compute_single_tm_score(cfg, item):
 # compute_all_tm_scores = iter_task(1000, 48*1000, n_cpu=8, mem=32)(compute_single_tm_score)
 compute_all_tm_scores = iter_task(1, 48, n_cpu=224, mem=128)(compute_single_tm_score)
 
-def get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num):
-    pairs = get_all_rec_pairs(rec2pocketfile, recfile2struct, pocfile2res_num)
-    scores = compute_all_tm_scores(pairs)
-    return postproc_tm_outputs(pairs, scores)
+# def get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num):
+#     pairs = get_all_rec_pairs(rec2pocketfile, recfile2struct, pocfile2res_num)
+#     scores = compute_all_tm_scores(pairs)
+#     return postproc_tm_outputs(pairs, scores)
+
+@task
+def get_all_pocket_tm_scores(rec2pocketfile):
+    ret = {}
+    for i, (rf1, pf1) in enumerate(rec2pocketfile.items()):
+        s1 = get_struct(rf1)
+        rn1 = get_all_res_nums(pf1)
+        for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items())):
+            if j >= i: continue
+            s2 = get_struct(rf2)
+            rn2 = get_all_res_nums(pf2)
+            try:
+                ret[(rf1, rf2)] = pocket_tm_score(s1, s2, rn1, rn2)
+            except:
+                print(f"Error computing TM score bwteen {rf1} and {rf2}")
+                print_exc()
+    return ret
 
