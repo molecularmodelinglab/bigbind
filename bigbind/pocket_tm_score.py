@@ -291,7 +291,7 @@ def compute_rec_tm_score(cfg, item):
             print_exc()
     return ret
 
-compute_all_tm_scores = iter_task(4, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
+compute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
 
 @simple_task
 def get_tm_score_inputs(cfg, rec2pocketfile):
