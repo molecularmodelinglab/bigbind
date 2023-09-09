@@ -595,7 +595,7 @@ def reduce_recfiles(cfg, rec2pocketfile):
     ret = {}
     for i, (rf, pf) in enumerate(rec2pocketfile.items()):
         ret[rf] = pf
-        if i > 200:
+        if i > 20:
             break
     return ret
 
@@ -658,7 +658,7 @@ def make_bigbind_workflow():
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
-    # rec2pocketfile = reduce_recfiles(rec2pocketfile)
+    rec2pocketfile = reduce_recfiles(rec2pocketfile)
 
     # recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
     pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)# , recfile2struct, pocfile2res_num)
