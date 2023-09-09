@@ -77,9 +77,17 @@ def get_aligned_coords(ref, other, idx):
     return np.dot(rotation_matrix, (other - centroid_other).T).T + centroid_ref
 
 pdb_parser = PDBParser(QUIET=True)
-@lru_cache(maxsize=32)
 def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
+
+@task(max_runtime=3, mem=64, num_outputs=2)
+def get_all_structs_and_res_nums(cfg, rec2pocketfile):
+    structs = {}
+    res_nums = {}
+    for rf, pf in rec2pocketfile.items():
+        structs[rf] = get_struct(rf)
+        res_nums[pf] = get_all_res_nums(pf)
+    return structs, res_nums
 
 OVERLAP_CUTOFF = 5
 # @cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)

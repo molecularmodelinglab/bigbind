@@ -21,7 +21,7 @@ from utils.task import file_task, simple_task, task
 from utils.downloads import StaticDownloadTask
 from bigbind.pdb_to_mol import load_components_dict, mol_from_pdb
 from bigbind.tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
-from bigbind.pocket_tm_score import get_all_pocket_tm_scores
+from bigbind.pocket_tm_score import get_all_pocket_tm_scores, get_all_structs_and_res_nums
 from bigbind.pdb_ligand import get_lig_url, save_pockets
 
 def canonicalize(mol):
@@ -649,14 +649,15 @@ def make_bigbind_workflow():
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
-    # recfile2struct = get_recfile_to_struct(rec2pocketfile)
+    recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
     pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)
 
     # x = task1()
     # y = task2(x)
 
     return Workflow(
-        pocket_tm_scores
+        recfile2struct
+        # pocket_tm_scores
         # pocket_centers,
         # lig_sim_mat
     )
