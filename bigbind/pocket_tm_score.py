@@ -289,7 +289,7 @@ def compute_rec_tm_score(cfg, item):
         except KeyboardInterrupt:
             raise
         except:
-            print(f"Error computing TM score bwteen {rf1} and {rf2}", file=sys.stderr))
+            print(f"Error computing TM score bewteen {rf1} and {rf2}", file=sys.stderr))
             print_exc()
     return ret
 
