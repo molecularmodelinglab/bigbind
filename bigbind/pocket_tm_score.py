@@ -84,7 +84,7 @@ def get_struct(rf):
 def get_all_structs_and_res_nums(cfg, rec2pocketfile):
     structs = {}
     res_nums = {}
-    for rf, pf in rec2pocketfile.items():
+    for rf, pf in tqdm(rec2pocketfile.items()):
         structs[rf] = get_struct(rf)
         res_nums[pf] = get_all_res_nums(pf)
     return structs, res_nums
