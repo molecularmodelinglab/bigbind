@@ -285,12 +285,15 @@ def compute_rec_tm_score(cfg, item):
         s2 = get_struct(rf2)
         rn2 = get_all_res_nums(pf2)
         try:
-            ret[(rf1, rf2)] = pocket_tm_score(cfg, s1, s2, rn1, rn2)
+            score = pocket_tm_score(cfg, s1, s2, rn1, rn2)
+            if score > 0:
+                ret[(i, j)] = score 
         except KeyboardInterrupt:
             raise
         except:
-            print(f"Error computing TM score bewteen {rf1} and {rf2}", file=sys.stderr))
+            print(f"Error computing TM score between {rf1} and {rf2}", file=sys.stderr)
             print_exc()
+            ret[(i, j)] = np.nan
     return ret
 
 compute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
