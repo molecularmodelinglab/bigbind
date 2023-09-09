@@ -6,6 +6,7 @@ import numpy as np
 import sys
 from functools import reduce, lru_cache
 from tqdm import tqdm
+import random
 from traceback import print_exc
 
 from utils.task import task, iter_task, simple_task
@@ -256,20 +257,53 @@ compute_all_tm_scores = iter_task(1, 48, n_cpu=224, mem=128)(compute_single_tm_s
 #     scores = compute_all_tm_scores(pairs)
 #     return postproc_tm_outputs(pairs, scores)
 
+# @task()
+# def get_all_pocket_tm_scores(cfg, rec2pocketfile):
+#     ret = {}
+#     for i, (rf1, pf1) in enumerate(rec2pocketfile.items()):
+#         s1 = get_struct(rf1)
+#         rn1 = get_all_res_nums(pf1)
+#         for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
+#             if j >= i: continue
+#             s2 = get_struct(rf2)
+#             rn2 = get_all_res_nums(pf2)
+#             try:
+#                 ret[(rf1, rf2)] = pocket_tm_score(cfg, s1, s2, rn1, rn2)
+#             except:
+#                 print(f"Error computing TM score bwteen {rf1} and {rf2}")
+#                 print_exc()
+#     return ret
+
 @task()
-def get_all_pocket_tm_scores(cfg, rec2pocketfile):
+def compute_rec_tm_score(cfg, item):
+    i, rf1, rec2pocketfile = item
     ret = {}
-    for i, (rf1, pf1) in enumerate(rec2pocketfile.items()):
-        s1 = get_struct(rf1)
-        rn1 = get_all_res_nums(pf1)
-        for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
-            if j >= i: continue
-            s2 = get_struct(rf2)
-            rn2 = get_all_res_nums(pf2)
-            try:
-                ret[(rf1, rf2)] = pocket_tm_score(cfg, s1, s2, rn1, rn2)
-            except:
-                print(f"Error computing TM score bwteen {rf1} and {rf2}")
-                print_exc()
+    s1 = get_struct(rf1)
+    rn1 = get_all_res_nums(pf1)
+    for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
+        if j >= i: continue
+        s2 = get_struct(rf2)
+        rn2 = get_all_res_nums(pf2)
+        try:
+            ret[(rf1, rf2)] = pocket_tm_score(cfg, s1, s2, rn1, rn2)
+        except:
+            print(f"Error computing TM score bwteen {rf1} and {rf2}")
+            print_exc()
     return ret
+
+compute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
+
+@simple_task
+def get_tm_score_inputs(rec2pocketfile):
+    ret = []
+    for i, rf1 in enumerate(rec2pocketfile):
+        ret.append((i, rf1, rec2pocketfile))
+    random.shuffle(ret)
+    return ret
+
+def get_all_pocket_tm_scores(rec2pocketfile):
+    inputs = get_tm_score_inputs(rec2pocketfile)
+    scores = compute_all_tm_scores(inputs)
+    return scores
+
 
