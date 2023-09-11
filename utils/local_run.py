@@ -6,6 +6,7 @@ import asyncio
 from utils.cfg_utils import get_config
 from bigbind.bigbind import make_bigbind_workflow
 from utils.slurm import submit_slurm_task
+from utils.sync import sync_to
 
 def run_single_node(cfg, workflow, node_index):
     node = workflow.nodes[node_index]
@@ -93,10 +94,14 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--task-name")
     parser.add_argument("-n", "--node-index", type=int)
     parser.add_argument("-s", "--submit", action="store_true")
+    parser.add_argyment("--sync", help="sync with gs bucket before running", type=bool, default=False)
     args = parser.parse_args()
 
     cfg = get_config(args.host)
     workflow = make_bigbind_workflow()
+
+    if args.sync:
+        sync_to(cfg)
 
     if args.node_index is not None:
         if args.submit:

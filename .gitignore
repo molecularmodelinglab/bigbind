@@ -16,7 +16,7 @@ tmp
 *.smi
 *.pkl
 
-configs/*.yaml
+configs/*
 
 notebooks
 outputs

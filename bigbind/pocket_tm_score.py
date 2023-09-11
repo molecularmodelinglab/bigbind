@@ -36,7 +36,7 @@ def get_alpha_and_beta_coords(structure):
     for model in structure:
         for chain in model:
             for residue in chain:
-                if "CA" in residue and "N" in residue and "C" in residue:
+                if "CA" in residue: # and "N" in residue and "C" in residue:
                     alpha_carbon = residue["CA"]  # Standard amino acids
                     alpha_carbon_coordinates.append(alpha_carbon.get_coord())
 

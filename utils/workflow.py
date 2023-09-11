@@ -3,10 +3,13 @@ import networkx as nx
 from collections import defaultdict
 from traceback import format_exc
 import requests
-
+from copy import deepcopy
+from google.cloud import storage
 
 from utils.task import Task, WorkNode
 from utils.utils import recursive_map
+
+gs_bucket = None
 
 class Workflow:
 
@@ -30,7 +33,7 @@ class Workflow:
         """ Returns a list of all nodes with the task_name """
         return self.name_to_nodes[task_name]
 
-    def run_node(self, cfg, node: WorkNode):
+    def run_node(self, cfg, node: WorkNode, force=False):
         """ Run a single node"""
         try:
             # print(node, node in self.node_cache, node.task.is_finished(cfg))
@@ -38,12 +41,12 @@ class Workflow:
             if node in self.node_cache:
                 return self.node_cache[node]
 
-            if node.task.is_finished(cfg):
+            if not force and node.task.is_finished(cfg):
                 return node.task.get_output(cfg)
 
             def maybe_run_node(x):
                 if isinstance(x, WorkNode):
-                    return self.run_node(cfg, x)
+                    return self.run_node(cfg, x, force)
                 return x
             
             args = recursive_map(maybe_run_node, node.args)
@@ -51,6 +54,26 @@ class Workflow:
             ret = node.task.full_run(cfg, args, kwargs)
 
             self.node_cache[node] = ret
+
+            # sync everything to google cloud
+            if "gcloud" in cfg and not node.task.simple:
+                global gs_bucket
+
+                if gs_bucket is None:
+                    storage_client = storage.Client.from_service_account_json('configs/gcloud_key.json')
+                    gs_bucket = storage_client.bucket(cfg.gcloud.bucket)
+
+                fake_cfg = deepcopy(cfg)
+                fake_cfg.host.work_dir = cfg.gcloud.work_dir
+                for func in [ "get_out_filename", "get_completed_filename" ]:
+                    from_fname = getattr(node.task, func)(cfg)
+                    to_fname = getattr(node.task, func)(fake_cfg)
+
+                    print(f"Uploading {from_fname} to gs {to_fname}")
+
+                    blob = gs_bucket.blob(to_fname)
+                    blob.upload_from_filename(from_fname)
+
         except:
             if "hooks" in cfg and "on_crash" in cfg.hooks:
                 if "slack" in cfg.hooks.on_crash:
@@ -62,10 +85,10 @@ class Workflow:
 
         return ret
 
-    def run(self, cfg):
+    def run(self, cfg, force=False):
         ret = []
         for out_node in self.out_nodes:
-            ret.append(self.run_node(cfg, out_node))
+            ret.append(self.run_node(cfg, out_node, force))
         return ret
 
     def get_graph(self):
@@ -106,8 +129,8 @@ class Workflow:
         return list(reversed(levels))
 
 if __name__ == "__main__":
-    from task import iter_task, simple_task
-    from cfg_utils import get_config
+    from utils.task import iter_task, simple_task
+    from utils.cfg_utils import get_config
 
     @simple_task
     def test_input(cfg):
@@ -119,4 +142,4 @@ if __name__ == "__main__":
 
     workflow = Workflow(test_iter(test_input()))
     cfg = get_config("local")
-    print(workflow.run(cfg))
+    print(workflow.run(cfg, force=True))

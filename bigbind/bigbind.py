@@ -17,7 +17,7 @@ from Bio.PDB import PDBParser
 
 from utils.cfg_utils import get_output_dir
 from utils.workflow import Workflow
-from utils.task import file_task, simple_task, task
+from utils.task import file_task, simple_task, task, iter_task
 from utils.downloads import StaticDownloadTask
 from bigbind.pdb_to_mol import load_components_dict, mol_from_pdb
 from bigbind.tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
@@ -599,6 +599,39 @@ def reduce_recfiles(cfg, rec2pocketfile):
             break
     return ret
 
+def sanitize_pdb_filename(cfg, pdb_file):
+    """ Very hack way of dealing with the fact that filenames are system-specific.
+    The correct way of doing this is to just use the non-system spefic truncated
+    filenames, but I already have a bunch of stuff cached that I don't want to recompute """
+    return "/".join([cfg.host.work_dir, cfg.run_name, "global", pdb_file.split("global")[-1]])
+
+def get_single_pqr_file(cfg, pdb_file):
+    pdb_file = sanitize_pdb_filename(cfg, pdb_file)
+    out_filename = pdb_file.replace(".pdb", ".pqr")
+    cmd = f"pdb2pqr --titration-state-method propka -q {pdb_file} {out_filename}"
+    # print(f"Running {cmd}")
+    try:
+        subprocess.run(cmd, shell=True, check=True, 
+            stdout = subprocess.DEVNULL,
+            stderr = subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        return None
+    return out_filename
+
+compute_pqr_files = iter_task(1, 16, n_cpu=8)(get_single_pqr_file)
+
+@simple_task
+def preproc_pdb2pqr(cfg, rec2pocketfile):
+    return list(rec2pocketfile.keys())
+
+@simple_task
+def postproc_pdb2pqr(cfg, rec2pocketfile, pqr_files):
+    return { rf: pqrf for rf, pqrf in zip(rec2pocketfile, pqr_files) }
+
+def get_all_pqr_files(rec2pocketfile):
+    inputs = preproc_pdb2pqr(rec2pocketfile)
+    return postproc_pdb2pqr(compute_pqr_files(inputs))
+
 def make_bigbind_workflow():
 
     sifts_zipped = download_sifts()
@@ -658,6 +691,8 @@ def make_bigbind_workflow():
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
+    pqr_files = get_all_pqr_files(rec2pocketfile)
+
     # rec2pocketfile = reduce_recfiles(rec2pocketfile)
 
     # recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
@@ -667,7 +702,9 @@ def make_bigbind_workflow():
     # y = task2(x)
 
     return Workflow(
-        pocket_tm_scores
+        pqr_files
+        # rec2pocketfile,
+        # pocket_tm_scores
         # pocket_tm_scores
         # pocket_centers,
         # lig_sim_mat

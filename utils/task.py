@@ -8,6 +8,19 @@ from multiprocessing import Pool
 
 from utils.utils import recursive_map
 
+# thanks, keflavich
+# https://stackoverflow.com/questions/15411967/how-can-i-check-if-code-is-executed-in-the-ipython-notebook
+def in_ipynb():
+    try:
+        cfg = get_ipython().config 
+        if cfg['IPKernelApp']['parent_appname'] == 'ipython-notebook':
+            return True
+        else:
+            return False
+    except NameError:
+        return False
+
+
 class WorkNode:
     
     task: "Task"
@@ -101,11 +114,11 @@ class Task:
         self.simple = simple
         self.num_outputs = num_outputs
 
-        if self.name in Task.ALL_TASKS:
-            raise Exception(f"Trying to define another Task with name {name}")
+        # if self.name in Task.ALL_TASKS and not in_ipynb():
+        #     raise Exception(f"Trying to define another Task with name {name}")
         Task.ALL_TASKS[self.name] = self
 
-    def get_out_folder(self, cfg):
+    def get_out_folder(self, cfg,):
         prefix = "local" if self.local else "global"
         return os.path.join(cfg.host.work_dir, cfg.run_name, prefix, self.name)
 
