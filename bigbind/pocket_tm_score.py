@@ -318,7 +318,7 @@ def recompute_rec_tm_score(cfg, item):
     except KeyError:
         pass
 
-    rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1])
+    rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1] if rec2pqr[rf1] is not None else rf1)
     s1 = get_struct(rf1)
 
     ret = {}
@@ -327,7 +327,7 @@ def recompute_rec_tm_score(cfg, item):
     for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
         if j >= i: continue
         pf2 = sanitize_pdb_filename(cfg, pf2)
-        rf2 = sanitize_pdb_filename(cfg, rec2pqr[rf2])
+        rf2 = sanitize_pdb_filename(cfg, rec2pqr[rf2] if rec2pqr[rf2] is not None else rf2)
         s2 = get_struct(rf2)
         rn2 = get_all_res_nums(pf2)
         try:
