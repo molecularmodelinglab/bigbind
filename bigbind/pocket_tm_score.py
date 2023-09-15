@@ -306,16 +306,19 @@ def sanitize_pdb_filename(cfg, pdb_file):
 
 def recompute_rec_tm_score(cfg, item):
     i, rf1, rec2pocketfile, rec2pqr, og_tm_scores = item
-    ret = {}
     pf1 = sanitize_pdb_filename(cfg, rec2pocketfile[rf1])
     rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1])
     s1 = get_struct(rf1)
+
+    print(f"Running on {rf1}")
 
     try:
         get_alpha_and_beta_coords(s1)
         return { val for (i2, j), val in og_tm_scores if i == i2 }
     except KeyError:
         pass
+
+    ret = {}
 
     rn1 = get_all_res_nums(pf1)
     for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
@@ -340,7 +343,7 @@ recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(recompute_rec_tm_
 
 @simple_task
 def reget_tm_score_inputs(cfg, rec2pocketfile, rec2pqr, og_tm_scores):
-    print(f"Processing {len(rec2pocketfile)} files")
+    print(f"Processing {len(rec2pocketfile)} files (again...)")
     ret = []
     for i, rf1 in enumerate(rec2pocketfile):
         ret.append((i, rf1, rec2pocketfile, rec2pqr, og_tm_scores))
