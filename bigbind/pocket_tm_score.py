@@ -344,7 +344,7 @@ recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(recompute_rec_tm_
 @simple_task
 def reget_tm_score_inputs(cfg, rec2pocketfile, rec2pqr, og_tm_scores):
     print(f"Processing {len(rec2pocketfile)} files (again...)")
-    og_tm_scores = { key: val for d in og_team_scores for key, val in d.items() }
+    og_tm_scores = { key: val for d in og_tm_scores for key, val in d.items() }
     ret = []
     for i, rf1 in enumerate(rec2pocketfile):
         ret.append((i, rf1, rec2pocketfile, rec2pqr, og_tm_scores))
