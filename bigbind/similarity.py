@@ -1,5 +1,6 @@
 from collections import defaultdict
 from tqdm import tqdm
+import numpy as np
 
 from bigbind.tanimoto_matrix import get_tanimoto_matrix, get_morgan_fps_parallel
 from old.probis import convert_inter_results_to_json, get_rep_recs
@@ -59,3 +60,53 @@ class LigSimilarity:
         except KeyError:
             print("This shouldn't happen...")
             return 0.0
+
+def get_edge_nums(df, tanimoto_mat, poc_sim, poc_indexes, tan_min, tan_max, probis_min, probis_max):
+    """ Returns a tuple of the number of pairs satisfying both:
+        tan_max > tanimoto_sim >= tan_min,
+        probis_max > probis_sim >= probis_min
+        and than the number of pairs satisfying only the first and only
+        the second condition, respectively """
+
+    tan_mask = np.logical_and(tanimoto_mat.data >= tan_min, tanimoto_mat.data < tan_max)
+    tan_mask = np.logical_and(tan_mask, tanimoto_mat.row != tanimoto_mat.col)
+    cur_tan_data = tanimoto_mat.data[tan_mask]
+    cur_tan_row = tanimoto_mat.row[tan_mask]
+    cur_tan_col = tanimoto_mat.col[tan_mask]
+
+    # probis_max being none implied we're only looking at ligands
+    # _within the same pocket_
+    if probis_max is None:
+        cur_poc2pocs = { poc: [ poc ] for poc in df.pocket.unique() }
+    else:
+        cur_poc2pocs = { poc: [ p for p, s in zip(poc_sim.poc2pocs[poc], poc_sim.poc2scores[poc]) if s < probis_max and s >= probis_min ] for poc in poc_sim.poc2pocs }
+        
+    both_edges = 0
+    lig_edges = tan_mask.sum()//2
+    rec_edges = 0
+
+    seen = set()
+
+    for p1, p2s in tqdm(cur_poc2pocs.items()):
+
+        p1_idx = poc_indexes.get(p1, [])
+        if len(p1_idx) == 0: continue
+
+        p1_mask = np.in1d(cur_tan_row, p1_idx)
+        # ct_row = cur_tan_row[p1_mask]
+        ct_col = cur_tan_col[p1_mask]
+
+        for p2 in p2s:
+            if (p2, p1) in seen: continue
+            seen.add((p1, p2))
+
+            p2_idx = poc_indexes.get(p2, [])
+            if len(p2_idx) == 0: continue
+            rec_edges += len(p2_idx)
+
+            p2_mask = np.in1d(ct_col, p2_idx)
+
+            both_edges += p2_mask.sum()
+
+    return both_edges, lig_edges, rec_edges
+    

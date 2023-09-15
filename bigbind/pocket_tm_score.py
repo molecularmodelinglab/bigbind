@@ -82,16 +82,16 @@ pdb_parser = PDBParser(QUIET=True)
 def get_struct(rf):
     return pdb_parser.get_structure("1", rf)
 
-@simple_task
+# @simple_task
 # @task(max_runtime=3, mem=128, num_outputs=2)
-def get_all_structs_and_res_nums(cfg, rec2pocketfile):
-    structs = {}
-    res_nums = {}
-    for rf, pf in tqdm(rec2pocketfile.items()):
-        structs[rf] = get_struct(rf)
-        res_nums[pf] = get_all_res_nums(pf)
-    return structs, res_nums
-get_all_structs_and_res_nums.num_outputs = 2
+# def get_all_structs_and_res_nums(cfg, rec2pocketfile):
+#     structs = {}
+#     res_nums = {}
+#     for rf, pf in tqdm(rec2pocketfile.items()):
+#         structs[rf] = get_struct(rf)
+#         res_nums[pf] = get_all_res_nums(pf)
+#     return structs, res_nums
+# get_all_structs_and_res_nums.num_outputs = 2
 
 OVERLAP_CUTOFF = 5
 # @cache(lambda cfg, r1, r2, r1_poc_file, r2_poc_file: (r1, r2), disable=True, version=1.0)
@@ -237,21 +237,6 @@ def postproc_tm_outputs(cfg, all_pairs, tm_scores):
     for (r1, r2, *rest), score in zip(all_pairs, tm_scores):
         ret[(r1, r2)] = score
 
-# @iter_task(600, 24*4*600, n_cpu=16, mem=32)
-def compute_single_tm_score(cfg, item):
-    r1, r2, s1, s2, p1, p2 = item
-    try:
-        return pocket_tm_score(cfg, s1, s2, p1, p2)
-    except KeyboardInterrupt:
-        raise
-    except:
-        print(f"Error computing TM score bewteen {r1} and {r2}", file=sys.stderr)
-        print_exc()
-        return 0
-
-# compute_all_tm_scores = iter_task(1000, 48*1000, n_cpu=8, mem=32)(compute_single_tm_score)
-compute_all_tm_scores = iter_task(1, 48, n_cpu=224, mem=128)(compute_single_tm_score)
-
 # def get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num):
 #     pairs = get_all_rec_pairs(rec2pocketfile, recfile2struct, pocfile2res_num)
 #     scores = compute_all_tm_scores(pairs)
@@ -297,6 +282,7 @@ def compute_rec_tm_score(cfg, item):
     return ret
 
 compute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
+recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
 
 @simple_task
 def get_tm_score_inputs(cfg, rec2pocketfile):
@@ -310,6 +296,60 @@ def get_tm_score_inputs(cfg, rec2pocketfile):
 def get_all_pocket_tm_scores(rec2pocketfile):
     inputs = get_tm_score_inputs(rec2pocketfile)
     scores = compute_all_tm_scores(inputs)
+    return scores
+
+def sanitize_pdb_filename(cfg, pdb_file):
+    """ Very hack way of dealing with the fact that filenames are system-specific.
+    The correct way of doing this is to just use the non-system spefic truncated
+    filenames, but I already have a bunch of stuff cached that I don't want to recompute """
+    return "/".join([cfg.host.work_dir, cfg.run_name, "global", pdb_file.split("global")[-1]])
+
+def recompute_rec_tm_score(cfg, item):
+    i, rf1, rec2pocketfile, rec2pqr, og_tm_scores = item
+    ret = {}
+    pf1 = sanitze_pdb_filename(rec2pocketfile[rf1])
+    rf1 = sanitize_pdb_filename(rec2pqr[rf1])
+    s1 = get_struct(rf1)
+
+    try:
+        get_alpha_and_beta_coords(s1)
+        return { val for (i2, j), val in og_tm_scores if i == i2 }
+    except KeyError:
+        pass
+
+    rn1 = get_all_res_nums(pf1)
+    for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
+        if j >= i: continue
+        pf2 = sanitize_pdb_filename(pf2)
+        rf2 = sanitize_pdb_filename(rec2pqr[rf2])
+        s2 = get_struct(rf2)
+        rn2 = get_all_res_nums(pf2)
+        try:
+            score = pocket_tm_score(cfg, s1, s2, rn1, rn2)
+            if score > 0:
+                ret[(i, j)] = score 
+        except KeyboardInterrupt:
+            raise
+        except:
+            print(f"Error computing TM score between {rf1} and {rf2}", file=sys.stderr)
+            print_exc()
+            ret[(i, j)] = np.nan
+    return ret
+
+recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(recompute_rec_tm_score)
+
+@simple_task
+def reget_tm_score_inputs(cfg, rec2pocketfile, rec2pqr, og_tm_scores):
+    print(f"Processing {len(rec2pocketfile)} files")
+    ret = []
+    for i, rf1 in enumerate(rec2pocketfile):
+        ret.append((i, rf1, rec2pocketfile, rec2pqr, og_tm_scores))
+    random.shuffle(ret)
+    return ret
+
+def reget_all_pocket_tm_scores(rec2pocketfile, rec2pqr, og_tm_scores):
+    inputs = reget_tm_score_inputs(rec2pocketfile, rec2pqr, og_tm_scores)
+    scores = recompute_all_tm_scores(inputs)
     return scores
 
 

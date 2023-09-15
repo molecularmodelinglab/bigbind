@@ -21,7 +21,7 @@ from utils.task import file_task, simple_task, task, iter_task
 from utils.downloads import StaticDownloadTask
 from bigbind.pdb_to_mol import load_components_dict, mol_from_pdb
 from bigbind.tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
-from bigbind.pocket_tm_score import get_all_pocket_tm_scores, get_all_structs_and_res_nums
+from bigbind.pocket_tm_score import get_all_pocket_tm_scores, reget_all_pocket_tm_scores
 from bigbind.pdb_ligand import get_lig_url, save_pockets
 
 def canonicalize(mol):
@@ -630,7 +630,8 @@ def postproc_pdb2pqr(cfg, rec2pocketfile, pqr_files):
 
 def get_all_pqr_files(rec2pocketfile):
     inputs = preproc_pdb2pqr(rec2pocketfile)
-    return postproc_pdb2pqr(compute_pqr_files(inputs))
+    outputs = compute_pqr_files(inputs)
+    return postproc_pdb2pqr(rec2pocketfile, outputs)
 
 def make_bigbind_workflow():
 
@@ -698,13 +699,14 @@ def make_bigbind_workflow():
     # recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
     pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)# , recfile2struct, pocfile2res_num)
 
+    pocket_tm_scores = reget_all_pocket_tm_scores(rec2pocketfile, pqr_files, pocket_tm_scores)
     # x = task1()
     # y = task2(x)
 
     return Workflow(
-        pqr_files
+        # pqr_files
         # rec2pocketfile,
-        # pocket_tm_scores
+        pocket_tm_scores,
         # pocket_tm_scores
         # pocket_centers,
         # lig_sim_mat
