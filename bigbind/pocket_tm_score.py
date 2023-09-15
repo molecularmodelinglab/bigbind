@@ -307,8 +307,8 @@ def sanitize_pdb_filename(cfg, pdb_file):
 def recompute_rec_tm_score(cfg, item):
     i, rf1, rec2pocketfile, rec2pqr, og_tm_scores = item
     ret = {}
-    pf1 = sanitze_pdb_filename(rec2pocketfile[rf1])
-    rf1 = sanitize_pdb_filename(rec2pqr[rf1])
+    pf1 = sanitize_pdb_filename(cfg, rec2pocketfile[rf1])
+    rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1])
     s1 = get_struct(rf1)
 
     try:
@@ -320,8 +320,8 @@ def recompute_rec_tm_score(cfg, item):
     rn1 = get_all_res_nums(pf1)
     for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
         if j >= i: continue
-        pf2 = sanitize_pdb_filename(pf2)
-        rf2 = sanitize_pdb_filename(rec2pqr[rf2])
+        pf2 = sanitize_pdb_filename(cfg, pf2)
+        rf2 = sanitize_pdb_filename(cfg, rec2pqr[rf2])
         s2 = get_struct(rf2)
         rn2 = get_all_res_nums(pf2)
         try:
