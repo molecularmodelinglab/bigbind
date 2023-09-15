@@ -94,7 +94,7 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--task-name")
     parser.add_argument("-n", "--node-index", type=int)
     parser.add_argument("-s", "--submit", action="store_true")
-    parser.add_argyment("--sync", help="sync with gs bucket before running", type=bool, default=False)
+    parser.add_argument("--sync", help="sync with gs bucket before running", action="store_true")
     args = parser.parse_args()
 
     cfg = get_config(args.host)
