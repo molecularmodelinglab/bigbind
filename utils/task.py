@@ -261,8 +261,11 @@ def iter_task(n_tasks, max_runtime, **kwargs):
                 chunk_size = len(x)/n_tasks
                 x_chunked = x[int(i*chunk_size):int((i+1)*chunk_size)]
                 f_partial = partial(f, cfg)
-                with Pool(n_cpu) as p:
-                    result = list(tqdm(p.imap(f_partial, x_chunked), total=len(x_chunked)))
+                if n_cpu == 1:
+                    result = [ f_partial(x) for x in tqdm(x_chunked) ]
+                else:
+                    with Pool(n_cpu) as p:
+                        result = list(tqdm(p.imap(f_partial, x_chunked), total=len(x_chunked)))
                 return result
             subtasks.append(sub)
 
