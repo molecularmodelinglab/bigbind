@@ -314,7 +314,7 @@ def recompute_rec_tm_score(cfg, item):
 
     try:
         get_alpha_and_beta_coords(s1)
-        return { val for (i2, j), val in og_tm_scores if i == i2 }
+        return { val for (i2, j), val in og_tm_scores.items() if i == i2 }
     except KeyError:
         pass
 
