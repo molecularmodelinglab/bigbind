@@ -307,16 +307,19 @@ def sanitize_pdb_filename(cfg, pdb_file):
 def recompute_rec_tm_score(cfg, item):
     i, rf1, rec2pocketfile, rec2pqr, og_tm_scores = item
     pf1 = sanitize_pdb_filename(cfg, rec2pocketfile[rf1])
-    rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1])
-    s1 = get_struct(rf1)
+    og_rf1 = sanitize_pdb_filename(cfg, rf1)
 
-    print(f"Running on {rf1}")
+    print(f"Running on {og_rf1}")
 
     try:
-        get_alpha_and_beta_coords(s1)
+        og_s1 = get_struct(og_rf1)
+        get_alpha_and_beta_coords(og_s1)
         return { val for (i2, j), val in og_tm_scores.items() if i == i2 }
     except KeyError:
         pass
+
+    rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1])
+    s1 = get_struct(rf1)
 
     ret = {}
 
