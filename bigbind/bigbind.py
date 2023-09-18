@@ -699,14 +699,14 @@ def make_bigbind_workflow():
     # recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
     pocket_tm_scores = get_all_pocket_tm_scores(rec2pocketfile)# , recfile2struct, pocfile2res_num)
 
-    pocket_tm_scores = reget_all_pocket_tm_scores(rec2pocketfile, pqr_files, pocket_tm_scores)
+    pocket_tm_scores = reget_all_pocket_tm_scores(rec2pocketfile, pocket_tm_scores)
     # x = task1()
     # y = task2(x)
 
     return Workflow(
         # pqr_files
         # rec2pocketfile,
-        pocket_tm_scores,
+        pocket_tm_scores
         # pocket_tm_scores
         # pocket_centers,
         # lig_sim_mat

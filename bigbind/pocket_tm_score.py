@@ -305,7 +305,7 @@ def sanitize_pdb_filename(cfg, pdb_file):
     return "/".join([cfg.host.work_dir, cfg.run_name, "global", pdb_file.split("global")[-1]])
 
 def recompute_rec_tm_score(cfg, item):
-    i, rf1, rec2pocketfile, rec2pqr, og_tm_scores = item
+    i, rf1, rec2pocketfile, og_tm_scores = item
     pf1 = sanitize_pdb_filename(cfg, rec2pocketfile[rf1])
     og_rf1 = sanitize_pdb_filename(cfg, rf1)
 
@@ -318,7 +318,7 @@ def recompute_rec_tm_score(cfg, item):
     except KeyError:
         pass
 
-    rf1 = sanitize_pdb_filename(cfg, rec2pqr[rf1] if rec2pqr[rf1] is not None else rf1)
+    rf1 = sanitize_pdb_filename(cfg, rf1.replace(".pdb", ".pqr"))
     s1 = get_struct(rf1)
 
     ret = {}
@@ -327,7 +327,7 @@ def recompute_rec_tm_score(cfg, item):
     for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
         if j >= i: continue
         pf2 = sanitize_pdb_filename(cfg, pf2)
-        rf2 = sanitize_pdb_filename(cfg, rec2pqr[rf2] if rec2pqr[rf2] is not None else rf2)
+        rf2 = sanitize_pdb_filename(cfg, rf2.replace(".pdb", ".pqr"))
         s2 = get_struct(rf2)
         rn2 = get_all_res_nums(pf2)
         try:
@@ -345,17 +345,17 @@ def recompute_rec_tm_score(cfg, item):
 recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(recompute_rec_tm_score)
 
 @simple_task
-def reget_tm_score_inputs(cfg, rec2pocketfile, rec2pqr, og_tm_scores):
+def reget_tm_score_inputs(cfg, rec2pocketfile, og_tm_scores):
     print(f"Processing {len(rec2pocketfile)} files (again...)")
     # og_tm_scores = { key: val for d in og_tm_scores for key, val in d.items() }
     ret = []
     for i, (rf1, og_tm) in enumerate(zip(rec2pocketfile, og_tm_scores)):
-        ret.append((i, rf1, rec2pocketfile, rec2pqr, og_tm))
+        ret.append((i, rf1, rec2pocketfile, og_tm))
     random.shuffle(ret)
     return ret
 
-def reget_all_pocket_tm_scores(rec2pocketfile, rec2pqr, og_tm_scores):
-    inputs = reget_tm_score_inputs(rec2pocketfile, rec2pqr, og_tm_scores)
+def reget_all_pocket_tm_scores(rec2pocketfile, og_tm_scores):
+    inputs = reget_tm_score_inputs(rec2pocketfile, og_tm_scores)
     scores = recompute_all_tm_scores(inputs)
     return scores
 
