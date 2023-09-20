@@ -282,7 +282,6 @@ def compute_rec_tm_score(cfg, item):
     return ret
 
 compute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
-recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(compute_rec_tm_score)
 
 @simple_task
 def get_tm_score_inputs(cfg, rec2pocketfile):
@@ -296,67 +295,6 @@ def get_tm_score_inputs(cfg, rec2pocketfile):
 def get_all_pocket_tm_scores(rec2pocketfile):
     inputs = get_tm_score_inputs(rec2pocketfile)
     scores = compute_all_tm_scores(inputs)
-    return scores
-
-def sanitize_pdb_filename(cfg, pdb_file):
-    """ Very hack way of dealing with the fact that filenames are system-specific.
-    The correct way of doing this is to just use the non-system spefic truncated
-    filenames, but I already have a bunch of stuff cached that I don't want to recompute """
-    return "/".join([cfg.host.work_dir, cfg.run_name, "global", pdb_file.split("global")[-1]])
-
-def recompute_rec_tm_score(cfg, item):
-    i, rf1, rec2pocketfile, og_tm_scores = item
-    pf1 = sanitize_pdb_filename(cfg, rec2pocketfile[rf1])
-    og_rf1 = sanitize_pdb_filename(cfg, rf1)
-
-    print(f"Running on {og_rf1}")
-
-    try:
-        og_s1 = get_struct(og_rf1)
-        get_alpha_and_beta_coords(og_s1)
-        return { val for (i2, j), val in og_tm_scores.items() if i == i2 }
-    except KeyError:
-        pass
-
-    rf1 = sanitize_pdb_filename(cfg, rf1.replace(".pdb", ".pqr"))
-    s1 = get_struct(rf1)
-
-    ret = {}
-
-    rn1 = get_all_res_nums(pf1)
-    for j, (rf2, pf2) in enumerate(tqdm(rec2pocketfile.items(), total=i)):
-        if j >= i: continue
-        pf2 = sanitize_pdb_filename(cfg, pf2)
-        rf2 = sanitize_pdb_filename(cfg, rf2.replace(".pdb", ".pqr"))
-        s2 = get_struct(rf2)
-        rn2 = get_all_res_nums(pf2)
-        try:
-            score = pocket_tm_score(cfg, s1, s2, rn1, rn2)
-            if score > 0:
-                ret[(i, j)] = score 
-        except KeyboardInterrupt:
-            raise
-        except:
-            print(f"Error computing TM score between {rf1} and {rf2}", file=sys.stderr)
-            print_exc()
-            ret[(i, j)] = np.nan
-    return ret
-
-recompute_all_tm_scores = iter_task(224, 48, n_cpu=1, mem=128)(recompute_rec_tm_score)
-
-@simple_task
-def reget_tm_score_inputs(cfg, rec2pocketfile, og_tm_scores):
-    print(f"Processing {len(rec2pocketfile)} files (again...)")
-    # og_tm_scores = { key: val for d in og_tm_scores for key, val in d.items() }
-    ret = []
-    for i, (rf1, og_tm) in enumerate(zip(rec2pocketfile, og_tm_scores)):
-        ret.append((i, rf1, rec2pocketfile, og_tm))
-    random.shuffle(ret)
-    return ret
-
-def reget_all_pocket_tm_scores(rec2pocketfile, og_tm_scores):
-    inputs = reget_tm_score_inputs(rec2pocketfile, og_tm_scores)
-    scores = recompute_all_tm_scores(inputs)
     return scores
 
 

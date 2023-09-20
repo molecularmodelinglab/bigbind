@@ -1,4 +1,5 @@
 import ssl
+import shutil
 import urllib.request
 import os
 from utils.task import Task
@@ -15,7 +16,10 @@ class StaticDownloadTask(Task):
         super().__init__(name, rel_out_fname, local=True)
         self.url = url
 
-    def run(self, cfg):
+    def run(self, cfg, prev_output=None):
         filename = self.get_out_filename(cfg)
+        # if prev_output is not None:
+        #     print(f"Using previous data from {self.name}")
+        #     shutil.copyfile(prev_output, filename)
         print(f"Writing to {filename}")
         urllib.request.urlretrieve(self.url, filename)

@@ -102,6 +102,7 @@ class Task:
                  mem=2, # GB
                  simple=False, # is it so simple you don't need to cache?
                  num_outputs=1,
+                 force=False,
                  ):
         self.name = name
         self._out_filename_rel = out_filename_rel
@@ -113,6 +114,8 @@ class Task:
 
         self.simple = simple
         self.num_outputs = num_outputs
+
+        self.force = force
 
         # if self.name in Task.ALL_TASKS and not in_ipynb():
         #     raise Exception(f"Trying to define another Task with name {name}")

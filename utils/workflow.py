@@ -7,7 +7,7 @@ from copy import deepcopy
 from google.cloud import storage
 
 from utils.task import Task, WorkNode
-from utils.utils import recursive_map
+from utils.utils import recursive_map, can_take_kwarg
 
 gs_bucket = None
 
@@ -26,6 +26,8 @@ class Workflow:
             name = node.task.name
             self.name_to_nodes[name].append(node)
 
+        self.prev_run_name = None
+
     def get_output_task_names(self):
         return [ node.task.name for node in self.out_nodes ]
 
@@ -38,6 +40,9 @@ class Workflow:
         try:
             # print(node, node in self.node_cache, node.task.is_finished(cfg))
 
+            if node.task.force:
+                force = True
+
             if node in self.node_cache:
                 return self.node_cache[node]
 
@@ -46,12 +51,27 @@ class Workflow:
 
             def maybe_run_node(x):
                 if isinstance(x, WorkNode):
-                    return self.run_node(cfg, x, force)
+                    return self.run_node(cfg, x)
                 return x
-            
+
+            # try to find previous outputs for this task if they exist
+            # (and we want them)
+            if self.prev_run_name is not None:
+                fake_cfg = deepcopy(cfg)
+                fake_cfg.run_name = self.prev_run_name
+                if node.task.is_finished(fake_cfg) and (hasattr(node.task, "func") and can_take_kwarg(node.task.func, "prev_output")): 
+                    try:
+                        prev_output = node.task.get_output(fake_cfg)
+                        node.kwargs["prev_output"] = prev_output
+                    except:
+                        raise
+                        # pass
+        
             args = recursive_map(maybe_run_node, node.args)
             kwargs = recursive_map(maybe_run_node, node.kwargs)
-            ret = node.task.full_run(cfg, args, kwargs)
+
+            print(f"Running {node}")
+            ret = node.task.full_run(cfg, args, kwargs, force)
 
             self.node_cache[node] = ret
 
