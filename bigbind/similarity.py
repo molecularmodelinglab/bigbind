@@ -331,9 +331,9 @@ if __name__ == "__main__":
         # print("Running", args)
         return get_edge_nums(new_tan_mat, poc_sim, poc_indexes, *args)
 
-    num_tan = 4
+    num_tan = 8
     tan_cutoffs = np.linspace(0.4, 1.0, num_tan+1)
-    num_prob = 5
+    num_prob = 12
     tm_cutoffs = [0.0, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0 ]# np.linspace(0.0, 1.0, num_prob+1)
     arg_list = [(t1, t2, p1, p2) for t1, t2 in zip(tan_cutoffs, tan_cutoffs[1:]) for p1, p2 in zip(tm_cutoffs, tm_cutoffs[1:])]
     # zero_result = f(arg_list[0])
@@ -342,5 +342,10 @@ if __name__ == "__main__":
     with Pool(pool_size) as p:
         results = list(p.imap(f, arg_list))
 
+    print("results")
     print(results)
+    print("tan_cutoffs")
+    print(list(tan_cutoffs))
+    print("prob_cutoffs")
+    print(list(prob_cutoffs))
                 
