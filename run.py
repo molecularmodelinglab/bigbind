@@ -59,10 +59,14 @@ class ProgressParallel(Parallel):
         self._pbar.refresh()
 
 def get_chembl_con(cfg):
+    """ Get the SQLite connection to the chembl database"""
     con = sqlite3.connect(cfg["chembl_file"])
     return con
 
 def load_sifts_into_chembl(cfg, con):
+    """ Loads SIFTS into the chembl sqlite database for easy sql queries. Note that
+    this actually modifies the db file itself for caching purposes. Not ideal to have
+    side effects but in this case it can't really hurt anything """
     sifts_df = pd.read_csv(cfg["sifts_file"], comment='#')
     cursor = con.cursor()
 
@@ -92,6 +96,7 @@ def load_crossdocked_files(cfg):
 
 @cache
 def get_crossdocked_uniprots(cfg, con, cd_files):
+    """ Return all the uniprot IDs from CrossDocked """
     cd_pdbs = { f.split('/')[-1].split('_')[0] for f in cd_files.keys() }
     cd_chains = { f.split('/')[-1].split('_')[1] for f in cd_files.keys() }
     cd_chains_str = ", ".join(map(lambda s: f"'{s}'", cd_chains))
@@ -200,88 +205,10 @@ def filter_activities(cfg, activities_unfiltered):
         st_types = [ r.standard_type for r in rows ]
         pchembl_values = [ r.pchembl_value for r in rows ]
         
-        # todo: remove. just taking the median for the thing I'm sending to Paul
+        # if there are multiple values for same protein-ligand pair, take the median
 
         final_pchembl = np.median(pchembl_values)
         final_st_type = "mixed"
-        final_nM = 10**(9-final_pchembl)
-        new_data["canonical_smiles"].append(smiles)
-        new_data["standard_type"].append(final_st_type)
-        new_data["standard_relation"].append("=")
-        new_data["standard_value"].append(final_nM)
-        new_data["standard_units"].append('nM')
-        new_data["pchembl_value"].append(final_pchembl)
-        new_data["protein_accession"].append(uniprot)
-        continue
-
-        # find the acitvities of k nearest neighbors to the chemical in question
-        sim_cutoff = 0.7
-        k = 5
-
-        # only use median if the std of the pchembl values is less than cutoff
-        std_cutoff = 0.1
-
-        # janky rlu cache
-        if len(uniprot2df) > 3:
-            # first added uniprot, since dicts preserve addition order
-            key = next(iter(uniprot2df))
-            del uniprot2df[key]
-
-        if uniprot in uniprot2df:
-            df = uniprot2df[uniprot]
-        else:
-            df = copy(activities_unfiltered.query("protein_accession == @uniprot")).reset_index(drop=True)
-            PandasTools.AddMoleculeColumnToFrame(df,smilesCol='canonical_smiles')
-            mfp2_fps = rdFingerprintGenerator.GetFPs(list(df['ROMol']))
-            df['fp'] = mfp2_fps
-            query_fp = next(iter(df.query("canonical_smiles == @smiles").fp))
-            similarity = DataStructs.BulkTanimotoSimilarity(query_fp ,df['fp'])
-            df["similarity"] = similarity
-            df.drop('ROMol', axis=1, inplace=True)
-            uniprot2df[uniprot] = df
-
-        near_pchembls = []
-        near_sims = []
-        for i, row in df.sort_values(by='similarity', ascending=False).iterrows():
-            if row.canonical_smiles == smiles: continue
-            if row.similarity < sim_cutoff: break
-            if len(near_pchembls) == k: break
-            near_pchembls.append(row.pchembl_value)
-            near_sims.append(row.similarity)
-
-        near_sims = np.array(near_sims)
-        near_pchembls = np.array(near_pchembls)
-
-        # if there's at least 1 found near activitiy, use the value closest
-        if len(near_pchembls) > 0:
-            # weighted averge
-            weights = np.exp(near_sims)/sum(np.exp(near_sims))
-            w_mean = sum(weights*near_pchembls)
-            final_pchembl = None
-            final_st_type = None
-            for pchembl, st_type in zip(pchembl_values, st_types):
-                if final_pchembl is None or abs(pchembl - w_mean) < abs(final_pchembl - w_mean):
-                    final_pchembl = pchembl
-                    final_st_type = st_type
-        else:
-            # otherwise if we have Ki/Kd data, use those
-            filtered_pchembls = [ pchembl for pchembl, st_type in zip(pchembl_values, st_types) if st_type in ('Ki', 'Kd')]
-            if len(filtered_pchembls) > 0:
-                final_pchembl = np.median(filtered_pchembls)
-                st_types = set(st_types).intersection({'Ki', "Kd"})
-            else:
-                # else just take median, if the values ain't too far.
-                # we have no other info
-                if np.std(pchembl_values) < std_cutoff:
-                    final_pchembl = np.median(pchembl_values)
-                else:
-                    continue
-            
-            if len(set(st_types)) == 1:
-                final_st_type = next(iter(st_types))
-            else:
-                final_st_type = "mixed"
-
         final_nM = 10**(9-final_pchembl)
         new_data["canonical_smiles"].append(smiles)
         new_data["standard_type"].append(final_st_type)
@@ -309,6 +236,11 @@ def get_smiles_to_mol(cfg, activities):
     return ret
 
 def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
+    """ Embed a single molecule in 3D, UFF optimize it, and save the structure
+    to an SDF file. Returns None if it violates some of our molecule conditions
+    -- invalid atoms, too large molecular weight, too few atoms. Really those
+    filters should be in their own function... This also returns None if 
+    the code times or can't embed the molecule in num_embed_tries tries"""
 
     periodic_table = Chem.GetPeriodicTable()
     
@@ -365,6 +297,7 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=True):
         
 @cache
 def save_all_mol_sdfs(cfg, activities):
+    """ Save all the sdfs for the bigbind molecules. In parellel! This takes a while"""
     unique_smiles = activities.canonical_smiles.unique()
     smiles2name = {}
     for i, smiles in enumerate(unique_smiles):
@@ -381,6 +314,7 @@ def save_all_mol_sdfs(cfg, activities):
 
 @cache
 def add_sdfs_to_activities(cfg, activities, smiles2filename):
+    """ Add SDF filenames to current activities dataframe"""
     filename_col = []
     for smiles in activities.canonical_smiles:
         if smiles in smiles2filename:
@@ -441,6 +375,8 @@ def get_uniprot_dicts(cfg, cd_files, chain2uniprot):
 
 @item_cache
 def download_lig_sdf(cfg, name, lig):
+    """ Download the sdf file associated with the ligand pdb
+    file from the PDB"""
     url = get_lig_url(lig)
     res = requests.get(url)
     return res.text
@@ -502,7 +438,8 @@ def get_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
 
 @cache
 def get_all_ligs(cfg, lig_sdfs, rigorous=False, verbose=False):
-    """ Returns a dict mapping ligand files to ligand mol objects """
+    """ Returns a dict mapping ligand SDF files to ligand mol objects.
+    Just for speed and convenience """
     lf_errors = []
     ret = {}
     for lf, sdf in tqdm(lig_sdfs.items()):
@@ -524,6 +461,7 @@ def get_all_ligs(cfg, lig_sdfs, rigorous=False, verbose=False):
 
 @cache
 def filter_uniprots(cfg, uniprot2pockets, pocket2uniprots):
+    """ Filter down the proteins to just those with only one binding site """
     filtered_uniprots = { uniprot for uniprot, pockets in uniprot2pockets.items() if len(pockets) == 1 }
     filtered_pockets = { pocket for pocket, uniprots in pocket2uniprots.items() if len(filtered_uniprots.intersection(uniprots)) }
     print(f"Found {len(filtered_uniprots)} proteins with only 1 pocket out of {len(uniprot2pockets)} (Success rate {100*len(filtered_uniprots)/len(uniprot2pockets)}%)")
@@ -574,6 +512,7 @@ def save_all_structures(cfg,
 
 @cache
 def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
+    """ Find the binding site for each receptor file and save it """
     rec2pocketfile = {}
     rec2res_num = {}
     for pocket, recfiles in tqdm(pocket2recs.items()):
@@ -590,6 +529,8 @@ def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
     return rec2pocketfile, rec2res_num
 
 def get_bounds(cfg, ligs, padding):
+    """ Returns the bounfds of the protein binding site from the 3D coords
+    of all the aligned ligands """
     bounds = None
     for lig in ligs:
         box = ComputeConfBox(lig.GetConformer(0))
@@ -695,10 +636,12 @@ max_pocket_size = 42
 max_pocket_residues = 5
 @cache
 def filter_struct_df(cfg, struct_df):
+    """ Remove all the proteins with too large a binding site or too few residues from the structures dataframe. """
     return struct_df.query("num_pocket_residues >= @max_pocket_residues and lig_pdb != ex_rec_pdb and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
 
 @cache
 def filter_act_df_final(cfg, act_df):
+    """ Remove all the proteins with too large a binding site or too few residues from the activities dataframe. """
     ret = act_df.query("num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
     mask = []
     for i, row in tqdm(ret.iterrows(), total=len(ret)):
@@ -872,6 +815,7 @@ def make_final_activities_df(cfg,
 
 @cache
 def save_clustered_structs(cfg, struct_df, splits):
+    """ Split the structures dataframe into train, val, and test """
     struct_df.to_csv(cfg["bigbind_folder"] + "/structures_all.csv", index=False)
     for split, pockets in splits.items():
         split_struct = struct_df.query("pocket in @pockets").reset_index(drop=True)
@@ -879,6 +823,7 @@ def save_clustered_structs(cfg, struct_df, splits):
 
 @cache
 def save_clustered_activities(cfg, activities, splits):
+    """ Split the activities dataframe into train, val, and test """
     activities.to_csv(cfg["bigbind_folder"] + f"/activities_all.csv", index=False)
     for split, pockets in splits.items():
         split_act = activities.query("pocket in @pockets").reset_index(drop=True)
@@ -906,7 +851,6 @@ def run(cfg):
     cd_uniprots = get_crossdocked_uniprots(cfg, con, cd_files)
     activities_unfiltered = get_crossdocked_chembl_activities(cfg, con, cd_uniprots)
     save_activities_unfiltered(cfg, activities_unfiltered)
-    # smiles2mol = get_smiles_to_mol(cfg, activities_unfiltered)
 
     activities_filtered = filter_activities(cfg, activities_unfiltered)
     smiles2filename = save_all_mol_sdfs(cfg, activities_filtered)
