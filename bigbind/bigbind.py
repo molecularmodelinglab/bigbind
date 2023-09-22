@@ -1,3 +1,5 @@
+from copy import deepcopy
+import io
 import subprocess
 import os
 from glob import glob
@@ -13,16 +15,16 @@ from rdkit.Chem import Descriptors, AllChem
 import signal
 import requests
 from traceback import print_exc
-from Bio.PDB import PDBParser
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
+from bigbind.similarity import get_pocket_indexes
 
 from utils.cfg_utils import get_output_dir
 from utils.workflow import Workflow
 from utils.task import file_task, simple_task, task, iter_task
 from utils.downloads import StaticDownloadTask
 from bigbind.pdb_to_mol import load_components_dict, mol_from_pdb
-from bigbind.tanimoto_matrix import get_morgan_fps_parallel, get_tanimoto_matrix
+from bigbind.tanimoto_matrix import get_full_tanimoto_matrix, get_morgan_fps_parallel, get_tanimoto_matrix
 from bigbind.pocket_tm_score import get_all_pocket_tm_scores
 from bigbind.pdb_ligand import get_lig_url, save_pockets
 
@@ -30,24 +32,31 @@ SEED = 49
 random.seed(SEED)
 np.random.seed(SEED)
 
-def canonicalize(mol):
 
-    order = tuple(zip(*sorted([(j, i) for i, j in enumerate(Chem.CanonicalRankAtoms(mol))])))[1]
+def canonicalize(mol):
+    order = tuple(
+        zip(*sorted([(j, i) for i, j in enumerate(Chem.CanonicalRankAtoms(mol))]))
+    )[1]
     mol = Chem.RenumberAtoms(mol, list(order))
 
     return mol
 
+
 class timeout:
-    def __init__(self, seconds, error_message='Timeout'):
+    def __init__(self, seconds, error_message="Timeout"):
         self.seconds = seconds
         self.error_message = error_message
+
     def handle_timeout(self, signum, frame):
         raise TimeoutError(self.error_message)
+
     def __enter__(self):
         signal.signal(signal.SIGALRM, self.handle_timeout)
         signal.alarm(self.seconds)
+
     def __exit__(self, type, value, traceback):
         signal.alarm(0)
+
 
 class ProgressParallel(Parallel):
     def __call__(self, total, *args, **kwargs):
@@ -58,28 +67,45 @@ class ProgressParallel(Parallel):
         self._pbar.n = self.n_completed_tasks
         self._pbar.refresh()
 
+
 # first define all the things we need to download
-download_chembl = StaticDownloadTask("download_chembl", "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_33_sqlite.tar.gz")
-download_sifts = StaticDownloadTask("download_sifts", "ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/pdb_chain_uniprot.csv.gz")
-download_crossdocked = StaticDownloadTask("download_crossdocked", "https://storage.googleapis.com/plantain_data/CrossDocked2022.tar.gz")
-download_comp_dict = StaticDownloadTask("download_comp_dict", "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif")
+download_chembl = StaticDownloadTask(
+    "download_chembl",
+    "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_33_sqlite.tar.gz",
+)
+download_sifts = StaticDownloadTask(
+    "download_sifts",
+    "ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/pdb_chain_uniprot.csv.gz",
+)
+download_crossdocked = StaticDownloadTask(
+    "download_crossdocked",
+    "https://storage.googleapis.com/plantain_data/CrossDocked2022.tar.gz",
+)
+download_comp_dict = StaticDownloadTask(
+    "download_comp_dict", "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif"
+)
 
 # now we gotta unzip everything
+
 
 @file_task("sifts.csv", max_runtime=0.5)
 def unzip_sifts(cfg, out_filename, sifts_filename, prev_output=None):
     # if prev_output is not None:
     #     print(f"Using previous data from unzip_sifts")
     #     shutil.copyfile(prev_output, out_filename)
-    subprocess.run(f"gunzip -c {sifts_filename} > {out_filename}", shell=True, check=True)
+    subprocess.run(
+        f"gunzip -c {sifts_filename} > {out_filename}", shell=True, check=True
+    )
+
 
 @file_task("CrossDocked2022", max_runtime=2)
 def untar_crossdocked(cfg, out_filename, cd_filename):
-    """ Hacky -- relies on out_filename being equal to the regular output of tar """
+    """Hacky -- relies on out_filename being equal to the regular output of tar"""
     out_dir = os.path.dirname(out_filename)
     cmd = f"tar -xf {cd_filename} --one-top-level={out_dir}"
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True, check=True)
+
 
 @file_task("chembl.db", max_runtime=200)
 def untar_chembl(cfg, out_filename, chembl_filename):
@@ -91,37 +117,44 @@ def untar_chembl(cfg, out_filename, chembl_filename):
     db_file = glob(os.path.join(out_dir, "chembl_*/chembl_*_sqlite/chembl_*.db"))[0]
     os.rename(db_file, out_filename)
 
+
 @simple_task
 def get_chembl_con(cfg, chembl_db_file):
-    """ Gets the connection to the chembl sqlite database"""
+    """Gets the connection to the chembl sqlite database"""
     con = sqlite3.connect(chembl_db_file)
     return con
 
+
 @simple_task
 def load_sifts_into_chembl(cfg, con, sifts_csv):
-    """ Loads SIFTS into the chembl sqlite database for easy sql queries. Note that
+    """Loads SIFTS into the chembl sqlite database for easy sql queries. Note that
     this actually modifies the db file itself for caching purposes. Not ideal to have
-    side effects but in this case it can't really hurt anything """
-    sifts_df = pd.read_csv(sifts_csv, comment='#')
+    side effects but in this case it can't really hurt anything"""
+    sifts_df = pd.read_csv(sifts_csv, comment="#")
     cursor = con.cursor()
 
     # no need to insert if table exists
-    cursor.execute(" SELECT count(name) FROM sqlite_master WHERE type='table' AND name='sifts' ")
-    if cursor.fetchone()[0]==1:
+    cursor.execute(
+        " SELECT count(name) FROM sqlite_master WHERE type='table' AND name='sifts' "
+    )
+    if cursor.fetchone()[0] == 1:
         return con
-    
-    cursor.execute("create table if not exists sifts (pdb text, chain text sp_primary text, res_beg integer, res_end integer, pdb_beg integer, pdb_end integer, sp_beg integer, sp_end integer)")
+
+    cursor.execute(
+        "create table if not exists sifts (pdb text, chain text sp_primary text, res_beg integer, res_end integer, pdb_beg integer, pdb_end integer, sp_beg integer, sp_end integer)"
+    )
     cursor.fetchall()
 
-    sifts_df.to_sql('sifts', con, if_exists='replace', index=False)
+    sifts_df.to_sql("sifts", con, if_exists="replace", index=False)
 
     return con
 
+
 @task(max_runtime=0.1)
 def get_crossdocked_rf_to_lfs(cfg, cd_dir, prev_output=None):
-    """ Get the pdb files associated with the crystal rec and lig files.
+    """Get the pdb files associated with the crystal rec and lig files.
     (the crossdocked types file only lists gninatypes files). Returns a
-    dict mapping rec files to a list of lig files that bind to the rec """
+    dict mapping rec files to a list of lig files that bind to the rec"""
 
     ret = defaultdict(set)
     for pocket in tqdm(glob(f"{cd_dir}/*")):
@@ -132,30 +165,36 @@ def get_crossdocked_rf_to_lfs(cfg, cd_dir, prev_output=None):
                 ret[rec_file].add(lig_file)
     return ret
 
+
 @task(max_runtime=0.1)
 def get_crossdocked_uniprots(cfg, con, cd_files):
-    """ Return all the uniprot IDs from CrossDocked"""
-    cd_pdbs = { f.split('/')[-1].split('_')[0] for f in cd_files.keys() }
-    cd_chains = { f.split('/')[-1].split('_')[1] for f in cd_files.keys() }
+    """Return all the uniprot IDs from CrossDocked"""
+    cd_pdbs = {f.split("/")[-1].split("_")[0] for f in cd_files.keys()}
+    cd_chains = {f.split("/")[-1].split("_")[1] for f in cd_files.keys()}
     cd_chains_str = ", ".join(map(lambda s: f"'{s}'", cd_chains))
     cd_pdbs_str = ", ".join(map(lambda s: f"'{s}'", cd_pdbs))
 
-    crossdocked_uniprots = pd.read_sql_query(f"select SP_PRIMARY from sifts where PDB in ({cd_pdbs_str})", con)
+    crossdocked_uniprots = pd.read_sql_query(
+        f"select SP_PRIMARY from sifts where PDB in ({cd_pdbs_str})", con
+    )
 
     return crossdocked_uniprots
 
+
 @file_task("activities_chunked.csv", max_runtime=24)
-def get_crossdocked_chembl_activities(cfg, out_filename, con, cd_uniprots, prev_output=None):
-    """ Get all activities (with some filtering for quality) of small
+def get_crossdocked_chembl_activities(
+    cfg, out_filename, con, cd_uniprots, prev_output=None
+):
+    """Get all activities (with some filtering for quality) of small
     molecules binding to proteins whose structures are in the crossdocked
-    dataset """
-    
+    dataset"""
+
     if prev_output is not None:
         return prev_output
 
     cd_uniprots_str = ", ".join(map(lambda s: f"'{s}'", cd_uniprots["SP_PRIMARY"]))
-    
-    query =   f"""
+
+    query = f"""
 
     SELECT md.chembl_id AS compound_chembl_id,
     cs.canonical_smiles,
@@ -184,43 +223,59 @@ def get_crossdocked_chembl_activities(cfg, out_filename, con, cd_uniprots, prev_
     AND c.accession in ({cd_uniprots_str});
     
     """
-    with open(out_filename, 'w'): pass
+    with open(out_filename, "w"):
+        pass
 
     approx_tot = 1571668
     chunksize = 1000
-    chunks = pd.read_sql_query(query,con,chunksize=chunksize)
+    chunks = pd.read_sql_query(query, con, chunksize=chunksize)
     header = True
-    for i, chunk in enumerate(tqdm(chunks, total=int(approx_tot/chunksize))):
-
-        chunk.to_csv(out_filename, header=header, mode='a', index=False)
+    for i, chunk in enumerate(tqdm(chunks, total=int(approx_tot / chunksize))):
+        chunk.to_csv(out_filename, header=header, mode="a", index=False)
 
         header = False
 
     return pd.read_csv(out_filename)
 
+
 @task(max_runtime=2)
 def filter_activities(cfg, activities_unfiltered, prev_output=None):
-    """ Remove mixtures, bad assays, and remove duplicates"""
+    """Remove mixtures, bad assays, and remove duplicates"""
 
     if prev_output is not None:
         return prev_output
 
     # remove mixtures
-    activities = activities_unfiltered[~activities_unfiltered["canonical_smiles"].str.contains("\.")].reset_index(drop=True)
+    activities = activities_unfiltered[
+        ~activities_unfiltered["canonical_smiles"].str.contains("\.")
+    ].reset_index(drop=True)
 
     # remove anything chembl thinks could be sketchy
-    activities = activities.query("potential_duplicate == 0 and data_validity_comment == 'valid' and confidence_score >= 8 and standard_relation == '='")
+    activities = activities.query(
+        "potential_duplicate == 0 and data_validity_comment == 'valid' and confidence_score >= 8 and standard_relation == '='"
+    )
 
     # we don't have these values for everything after deduping so just drop em
-    activities = activities.drop(columns=["potential_duplicate", "data_validity_comment", "confidence_score", "target_chembl_id", "target_type", "assay_id"])
+    activities = activities.drop(
+        columns=[
+            "potential_duplicate",
+            "data_validity_comment",
+            "confidence_score",
+            "target_chembl_id",
+            "target_type",
+            "assay_id",
+        ]
+    )
 
     # now we filter duplicates
-    dup_indexes = activities.duplicated(keep=False, subset=['compound_chembl_id', 'protein_accession'])
+    dup_indexes = activities.duplicated(
+        keep=False, subset=["compound_chembl_id", "protein_accession"]
+    )
     dup_df = activities[dup_indexes]
 
     dup_rows = defaultdict(list)
     for i, row in tqdm(dup_df.iterrows(), total=len(dup_df)):
-        dup_rows[(row['compound_chembl_id'], row['protein_accession'])].append(row)
+        dup_rows[(row["compound_chembl_id"], row["protein_accession"])].append(row)
 
     activities = activities[~dup_indexes].reset_index(drop=True)
 
@@ -232,26 +287,25 @@ def filter_activities(cfg, activities_unfiltered, prev_output=None):
         "standard_value": [],
         "standard_units": [],
         "pchembl_value": [],
-        "protein_accession": []
+        "protein_accession": [],
     }
-    
-    uniprot2df = {} # we want to cache the ligand dfs we find for each protein
+
+    uniprot2df = {}  # we want to cache the ligand dfs we find for each protein
 
     # take the median value of duplicated measurements
     for (chembl_id, uniprot), rows in tqdm(dup_rows.items()):
-        st_types = [ r.standard_type for r in rows ]
-        pchembl_values = [ r.pchembl_value for r in rows ]
-        
-        
+        st_types = [r.standard_type for r in rows]
+        pchembl_values = [r.pchembl_value for r in rows]
+
         final_pchembl = np.median(pchembl_values)
         final_st_type = "mixed"
-        final_nM = 10**(9-final_pchembl)
+        final_nM = 10 ** (9 - final_pchembl)
         new_data["canonical_smiles"].append(rows[0].canonical_smiles)
         new_data["compound_chembl_id"].append(chembl_id)
         new_data["standard_type"].append(final_st_type)
         new_data["standard_relation"].append("=")
         new_data["standard_value"].append(final_nM)
-        new_data["standard_units"].append('nM')
+        new_data["standard_units"].append("nM")
         new_data["pchembl_value"].append(final_pchembl)
         new_data["protein_accession"].append(uniprot)
 
@@ -260,24 +314,32 @@ def filter_activities(cfg, activities_unfiltered, prev_output=None):
 
     return activities
 
+
 @simple_task
 def load_act_unfiltered(cfg, filename):
     return pd.read_csv(filename)
 
+
 @task(max_runtime=0.1)
 def save_activities_unfiltered(cfg, activities_unfiltered):
-    activities_unfiltered.to_csv(get_output_dir(cfg) + "/activities_unfiltered.csv", index=False)
+    activities_unfiltered.to_csv(
+        get_output_dir(cfg) + "/activities_unfiltered.csv", index=False
+    )
+
 
 # ZINC yeets any molecule containing other elements, so shall we
-allowed_atoms = { "H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I" }
+allowed_atoms = {"H", "C", "N", "O", "F", "S", "P", "Cl", "Br", "I"}
 min_atoms_in_mol = 5
 max_mol_weight = 1000
 
-def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False, filename=None, ret_mol=False):
-    """ Embed + UFF optimize single mol"""
+
+def save_mol_sdf(
+    cfg, name, smiles, num_embed_tries=10, verbose=False, filename=None, ret_mol=False
+):
+    """Embed + UFF optimize single mol"""
 
     periodic_table = Chem.GetPeriodicTable()
-    
+
     if filename is None:
         folder = get_output_dir(cfg) + "/chembl_structures"
         os.makedirs(folder, exist_ok=True)
@@ -290,7 +352,7 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False, filename=
 
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
 
-    if mol.GetNumAtoms() < min_atoms_in_mol: 
+    if mol.GetNumAtoms() < min_atoms_in_mol:
         if verbose:
             print(f"Rejecting {smiles} because it has only {mol.GetNumAtoms()} atoms")
         return False
@@ -337,12 +399,15 @@ def save_mol_sdf(cfg, name, smiles, num_embed_tries=10, verbose=False, filename=
 
     return True
 
+
 SDF_N_CPU = 64
-SDF_TOTAL_RUNTIME=64
-@task(max_runtime=SDF_TOTAL_RUNTIME/SDF_N_CPU, n_cpu=SDF_N_CPU, mem=1*SDF_N_CPU)
+SDF_TOTAL_RUNTIME = 64
+
+
+@task(max_runtime=SDF_TOTAL_RUNTIME / SDF_N_CPU, n_cpu=SDF_N_CPU, mem=1 * SDF_N_CPU)
 def save_all_mol_sdfs(cfg, activities, prev_output=None):
-    """ Embed and UFF optimize each mol in BigBind. Returns a dict mapping smiles
-    to filenames relative to bigbind output folder """
+    """Embed and UFF optimize each mol in BigBind. Returns a dict mapping smiles
+    to filenames relative to bigbind output folder"""
 
     if prev_output is not None:
         return prev_output
@@ -353,13 +418,20 @@ def save_all_mol_sdfs(cfg, activities, prev_output=None):
         smiles2name[smiles] = f"mol_{i}"
 
     smiles2filename = {}
-    results = ProgressParallel(n_jobs=SDF_N_CPU)(len(smiles2name), (delayed(save_mol_sdf)(cfg, name, smiles) for smiles, name in smiles2name.items()))
+    results = ProgressParallel(n_jobs=SDF_N_CPU)(
+        len(smiles2name),
+        (
+            delayed(save_mol_sdf)(cfg, name, smiles)
+            for smiles, name in smiles2name.items()
+        ),
+    )
     for result, (smiles, name) in zip(results, smiles2name.items()):
         if result:
             filename = f"chembl_structures/{name}.sdf"
             smiles2filename[smiles] = filename
 
     return smiles2filename
+
 
 @task(max_runtime=0.2)
 def add_sdfs_to_activities(cfg, activities, smiles2filename):
@@ -371,23 +443,25 @@ def add_sdfs_to_activities(cfg, activities, smiles2filename):
             filename_col.append("error")
 
     activities["lig_file"] = filename_col
-    
+
     activities = activities.query("lig_file != 'error'").reset_index(drop=True)
     return activities
 
+
 @task(max_runtime=0.2)
 def get_chain_to_uniprot(cfg, con):
-    """ Map PDB ids and chains to uniprot ids """
+    """Map PDB ids and chains to uniprot ids"""
     sifts_df = pd.read_sql_query("SELECT * FROM SIFTS", con)
     chain2uniprot = {}
     for i, row in tqdm(sifts_df.iterrows(), total=len(sifts_df)):
         chain2uniprot[(row["PDB"], row["CHAIN"])] = row["SP_PRIMARY"]
     return chain2uniprot
 
+
 @task(max_runtime=0.3, num_outputs=6)
 def get_crossdocked_maps(cfg, cd_files, chain2uniprot):
-    """ Get a bunch of dictionaries mapping uniprot id to and from
-    rec file, lig file, and pocketome pocket """
+    """Get a bunch of dictionaries mapping uniprot id to and from
+    rec file, lig file, and pocketome pocket"""
     uniprot2recs = defaultdict(set)
     uniprot2ligs = defaultdict(set)
     uniprot2pockets = defaultdict(set)
@@ -408,18 +482,19 @@ def get_crossdocked_maps(cfg, cd_files, chain2uniprot):
             pocket2recs[pocket].add(rec_file)
             pocket2ligs[pocket].add(lig_file)
 
-    
     pocket2uniprots = defaultdict(set)
     for uniprot, pockets in uniprot2pockets.items():
         for pocket in pockets:
             pocket2uniprots[pocket].add(uniprot)
 
-    return uniprot2recs,\
-        uniprot2ligs,\
-        uniprot2pockets,\
-        pocket2uniprots,\
-        pocket2recs,\
-        pocket2ligs
+    return (
+        uniprot2recs,
+        uniprot2ligs,
+        uniprot2pockets,
+        pocket2uniprots,
+        pocket2recs,
+        pocket2ligs,
+    )
 
 
 def download_lig_sdf(cfg, name, lig):
@@ -427,10 +502,11 @@ def download_lig_sdf(cfg, name, lig):
     res = requests.get(url)
     return res.text
 
+
 @task(max_runtime=10)
 def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
-    """ Returns a mapping from lig file to text associated with
-    its downloaded SDF file """
+    """Returns a mapping from lig file to text associated with
+    its downloaded SDF file"""
     ret = {}
     tot_ligs = 0
     lf_errors = []
@@ -449,22 +525,24 @@ def download_all_lig_sdfs(cfg, uniprot2ligs, rigorous=False):
                 else:
                     lf_errors.append(lig)
                     print_exc()
-    print(f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)")
+    print(
+        f"Successfully downloaded {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/tot_ligs)*100}%)"
+    )
     return ret
 
 
 def get_crystal_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
-    """ Returns the RDKit mol object. The conformation is specified
-    in the pdb lig_file and the connectivity is specified in sdf_text """
-    lig = next(Chem.ForwardSDMolSupplier(io.BytesIO(sdf_text.encode('utf-8'))))
+    """Returns the RDKit mol object. The conformation is specified
+    in the pdb lig_file and the connectivity is specified in sdf_text"""
+    lig = next(Chem.ForwardSDMolSupplier(io.BytesIO(sdf_text.encode("utf-8"))))
     lig_untrans = deepcopy(lig)
     lig_pdb = Chem.MolFromPDBFile(lig_file)
 
     assert lig_pdb is not None
     assert lig is not None
-    assert '.' not in Chem.MolToSmiles(lig)
+    assert "." not in Chem.MolToSmiles(lig)
     assert lig.GetNumAtoms() == lig_pdb.GetNumAtoms()
-    
+
     conf = lig_pdb.GetConformer(0)
     lig.RemoveConformer(0)
     lig.AddConformer(conf)
@@ -472,12 +550,15 @@ def get_crystal_lig(cfg, name, lig_file, sdf_text, align_cutoff=2.0):
     # sometimes the coordinates are in a different order?
     # for now just throw these out
     assert AllChem.AlignMol(lig_untrans, lig) < align_cutoff
-    
+
     return lig
 
+
 @task(max_runtime=1)
-def get_all_crystal_ligs(cfg, comp_dict, lig_sdfs, rigorous=False, verbose=False, prev_output=None):
-    """ Returns a dict mapping ligand files to ligand mol objects """
+def get_all_crystal_ligs(
+    cfg, comp_dict, lig_sdfs, rigorous=False, verbose=False, prev_output=None
+):
+    """Returns a dict mapping ligand files to ligand mol objects"""
 
     if prev_output is not None:
         ret = {}
@@ -508,38 +589,44 @@ def get_all_crystal_ligs(cfg, comp_dict, lig_sdfs, rigorous=False, verbose=False
                     if verbose:
                         print_exc()
                     lf_errors.append(lf)
-    print(f"Successfully obtained {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/len(lig_sdfs))*100}%)")
+    print(
+        f"Successfully obtained {len(ret)} ligands and had {len(lf_errors)} errors (success rate {(len(ret)/len(lig_sdfs))*100}%)"
+    )
     return ret
+
 
 @task(max_runtime=0.1, num_outputs=2)
 def filter_uniprots(cfg, uniprot2pockets, pocket2uniprots):
-    """ Return only the uniprot IDs and pocketome pockets that we're using. Only use
-    proteins with a single pocket. """
+    """Return only the uniprot IDs and pocketome pockets that we're using. Only use
+    proteins with a single pocket."""
     filtered_uniprots = set()
     filtered_pockets = set()
     for uniprot, pockets in uniprot2pockets.items():
-        if len(pockets) > 1: continue
+        if len(pockets) > 1:
+            continue
         pocket = next(iter(pockets))
         filtered_uniprots.add(uniprot)
         filtered_pockets.add(pocket)
     # filtered_uniprots = { uniprot for uniprot, pockets in uniprot2pockets.items() if len(pockets) == 1 }
     # filtered_pockets = { pocket for pocket, uniprots in pocket2uniprots.items() if len(filtered_uniprots.intersection(uniprots)) }
-    print(f"Found {len(filtered_uniprots)} proteins with only 1 pocket out of {len(uniprot2pockets)} (Success rate {100*len(filtered_uniprots)/len(uniprot2pockets)}%)")
-    print(f"Found {len(filtered_pockets)} pockets with valid proteins out of {len(pocket2uniprots)} (Success rate {100*len(filtered_pockets)/len(pocket2uniprots)}%)")
+    print(
+        f"Found {len(filtered_uniprots)} proteins with only 1 pocket out of {len(uniprot2pockets)} (Success rate {100*len(filtered_uniprots)/len(uniprot2pockets)}%)"
+    )
+    print(
+        f"Found {len(filtered_pockets)} pockets with valid proteins out of {len(pocket2uniprots)} (Success rate {100*len(filtered_pockets)/len(pocket2uniprots)}%)"
+    )
     return filtered_uniprots, filtered_pockets
 
+
 @task(max_runtime=3, num_outputs=4)
-def save_all_structures(cfg,
-                        cd_dir,
-                        pocket2uniprots,
-                        pocket2recs,
-                        pocket2ligs,
-                        ligfile2lig):
-    """ Saves the pdb receptor and sdf ligand files. Returns new
-    dicts that use _those_ filename instead of crossdocked's """
+def save_all_structures(
+    cfg, cd_dir, pocket2uniprots, pocket2recs, pocket2ligs, ligfile2lig
+):
+    """Saves the pdb receptor and sdf ligand files. Returns new
+    dicts that use _those_ filename instead of crossdocked's"""
 
     folder = get_output_dir(cfg)
-    
+
     my_pocket2recs = defaultdict(set)
     my_pocket2ligs = defaultdict(set)
     my_ligfile2lig = {}
@@ -547,17 +634,18 @@ def save_all_structures(cfg,
 
     for pocket in tqdm(pocket2uniprots):
         out_folder = folder + "/" + pocket
-        
+
         recfiles = pocket2recs[pocket]
         ligfiles = pocket2ligs[pocket]
 
         ligs = set()
         for ligfile in ligfiles:
-            if ligfile not in ligfile2lig: continue
-            
+            if ligfile not in ligfile2lig:
+                continue
+
             lig = ligfile2lig[ligfile]
             ligs.add(lig)
-            
+
             os.makedirs(out_folder, exist_ok=True)
             out_file = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + ".sdf"
             my_pocket2ligs[pocket].add("/".join(out_file.split("/")[-2:]))
@@ -566,29 +654,43 @@ def save_all_structures(cfg,
             writer.write(lig)
             writer.close()
 
-            uff_filename = out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + "_uff.sdf"
+            uff_filename = (
+                out_folder + "/" + ligfile.split("/")[-1].split(".")[0] + "_uff.sdf"
+            )
             # if os.path.exists(uff_filename):
             #     my_ligfile2uff_lig[out_file] = uff_filename
-            uff = save_mol_sdf(cfg, None, Chem.MolToSmiles(lig), filename=uff_filename, ret_mol=True)
+            uff = save_mol_sdf(
+                cfg, None, Chem.MolToSmiles(lig), filename=uff_filename, ret_mol=True
+            )
             if uff:
                 uff_noh = canonicalize(Chem.RemoveHs(uff))
                 lig_noh = canonicalize(Chem.RemoveHs(lig))
-                if Chem.MolToSmiles(uff_noh, isomericSmiles=False) != Chem.MolToSmiles(lig_noh, isomericSmiles=False):
+                if Chem.MolToSmiles(uff_noh, isomericSmiles=False) != Chem.MolToSmiles(
+                    lig_noh, isomericSmiles=False
+                ):
                     print(f"Error saving uff for {out_file}")
                     my_ligfile2uff_lig["/".join(out_file.split("/")[-2:])] = "none"
                 else:
-                    my_ligfile2uff_lig["/".join(out_file.split("/")[-2:])] = uff_filename
+                    my_ligfile2uff_lig[
+                        "/".join(out_file.split("/")[-2:])
+                    ] = uff_filename
             else:
                 my_ligfile2uff_lig["/".join(out_file.split("/")[-2:])] = "none"
 
         if len(ligs):
             for recfile in recfiles:
                 full_recfile = cd_dir + "/" + recfile
-                out_file = out_folder + "/" + recfile.split("/")[-1].split(".")[0] + "_nofix.pdb"
+                out_file = (
+                    out_folder
+                    + "/"
+                    + recfile.split("/")[-1].split(".")[0]
+                    + "_nofix.pdb"
+                )
                 my_pocket2recs[pocket].add("/".join(out_file.split("/")[-2:]))
                 shutil.copyfile(full_recfile, out_file)
 
     return my_pocket2recs, my_pocket2ligs, my_ligfile2lig, my_ligfile2uff_lig
+
 
 @task(max_runtime=3, num_outputs=2)
 def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
@@ -597,13 +699,14 @@ def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
     rec2res_num = {}
     for pocket, recfiles in tqdm(pocket2recs.items()):
         ligfiles = pocket2ligs[pocket]
-        ligs = { ligfile2lig[lf] for lf in ligfiles }
+        ligs = {ligfile2lig[lf] for lf in ligfiles}
         pocket_files, res_numbers = save_pockets(recfiles, ligs, lig_dist_cutoff=5)
         for recfile, pocket_file in pocket_files.items():
             res_num = res_numbers[recfile]
             rec2pocketfile[recfile] = pocket_file
             rec2res_num[recfile] = res_num
     return rec2pocketfile, rec2res_num
+
 
 def get_bounds(cfg, ligs, padding):
     bounds = None
@@ -616,17 +719,18 @@ def get_bounds(cfg, ligs, padding):
 
     bounds_min = np.array([bounds[0].x, bounds[0].y, bounds[0].z])
     bounds_max = np.array([bounds[1].x, bounds[1].y, bounds[1].z])
-    center = 0.5*(bounds_min + bounds_max)
-    size = (bounds_max - center + padding)*2
+    center = 0.5 * (bounds_min + bounds_max)
+    size = (bounds_max - center + padding) * 2
     return center, size
+
 
 @task(num_outputs=2)
 def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
-    """ Return the centroids and box sizes for each pocket """
+    """Return the centroids and box sizes for each pocket"""
     centers = {}
     sizes = {}
     for pocket, ligfiles in tqdm(pocket2ligs.items()):
-        ligs = { ligfile2lig[lf] for lf in ligfiles }
+        ligs = {ligfile2lig[lf] for lf in ligfiles}
         center, size = get_bounds(cfg, ligs, padding)
         centers[pocket] = center
         sizes[pocket] = size
@@ -641,6 +745,7 @@ def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
 #         ret[rec] = pdb_parser.get_structure("1", rec)
 #     return ret
 
+
 def get_single_pqr_file(cfg, pdb_file):
     pdb_file_full = get_output_dir(cfg) + "/" + pdb_file
     out_filename = get_output_dir(cfg) + "/" + pdb_file.replace("_nofix.pdb", ".pdb")
@@ -653,14 +758,20 @@ def get_single_pqr_file(cfg, pdb_file):
     cmd = f"pdb2pqr --titration-state-method propka -q {pdb_file_full} {out_filename}"
     # print(f"Running {cmd}")
     try:
-        subprocess.run(cmd, shell=True, check=True, 
-            stdout = subprocess.DEVNULL,
-            stderr = subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            shell=True,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except subprocess.CalledProcessError:
         return None
     return out_filename
 
+
 compute_pqr_files = iter_task(1, 16, n_cpu=8)(get_single_pqr_file)
+
 
 @simple_task
 def preproc_pdb2pqr(cfg, pocket2rfs):
@@ -668,6 +779,7 @@ def preproc_pdb2pqr(cfg, pocket2rfs):
     for poc, rfs in pocket2rfs.items():
         ret += rfs
     return ret
+
 
 @simple_task
 def postproc_pdb2pqr(cfg, pocket2rfs, pqr_files):
@@ -681,41 +793,60 @@ def postproc_pdb2pqr(cfg, pocket2rfs, pqr_files):
                 ret[poc].add(fixed_rf)
     return ret
 
+
 def fix_all_recfiles(pocket2rfs):
     inputs = preproc_pdb2pqr(pocket2rfs)
     outputs = compute_pqr_files(inputs)
     return postproc_pdb2pqr(pocket2rfs, outputs)
 
+
 max_pocket_size = 42
 max_pocket_residues = 5
+
+
 @task(max_runtime=0.2)
-def make_final_activities_df(cfg, 
-                             activities,
-                             uniprot2pockets,
-                             pocket2recs,
-                             rec2pocketfile,
-                             rec2res_num,
-                             pocket_centers,
-                             pocket_sizes,
-                             act_cutoff = 5.0):
-    """ Add all the receptor stuff to the activities df. Code is
+def make_final_activities_df(
+    cfg,
+    activities,
+    uniprot2pockets,
+    pocket2recs,
+    rec2pocketfile,
+    rec2res_num,
+    pocket_centers,
+    pocket_sizes,
+    act_cutoff=5.0,
+):
+    """Add all the receptor stuff to the activities df. Code is
     mostly copied and pasted from the struct_df creation. Act_cutoff
     is the pchembl value at which we label a compound as active. Default
-    is 5.0 (10 uM) """
+    is 5.0 (10 uM)"""
 
     final_uniprots = set()
     for uniprot, pockets in uniprot2pockets.items():
-        if len(pockets) > 1: continue
+        if len(pockets) > 1:
+            continue
         pocket = next(iter(pockets))
         recs = pocket2recs[pocket]
         if len(recs) > 0:
             final_uniprots.add(uniprot)
 
     activities["active"] = activities["pchembl_value"] > act_cutoff
-    
+
     # rename columns to jive w/ structure naming convention
-    col_order = ["lig_smiles", "lig_file", "standard_type", "standard_relation", "standard_value", "standard_units", "pchembl_value", "active", "uniprot"]
-    new_act = activities.rename(columns={"canonical_smiles": "lig_smiles", "protein_accession": "uniprot" })[col_order]
+    col_order = [
+        "lig_smiles",
+        "lig_file",
+        "standard_type",
+        "standard_relation",
+        "standard_value",
+        "standard_units",
+        "pchembl_value",
+        "active",
+        "uniprot",
+    ]
+    new_act = activities.rename(
+        columns={"canonical_smiles": "lig_smiles", "protein_accession": "uniprot"}
+    )[col_order]
     new_act = new_act.query("uniprot in @final_uniprots").reset_index(drop=True)
 
     pocket_series = []
@@ -733,7 +864,7 @@ def make_final_activities_df(cfg,
         recfiles = list(pocket2recs[pocket])
         recfile = random.choice(recfiles)
         rec_pdb = recfile.split("/")[-1].split("_")[0]
-        
+
         rec_pocket_file = rec2pocketfile[recfile]
         poc_res_num = rec2res_num[recfile]
         center = pocket_centers[pocket]
@@ -749,23 +880,25 @@ def make_final_activities_df(cfg,
 
     center_series = np.array(center_series)
     bounds_series = np.array(bounds_series)
-    
+
     df_dict = {
         "pocket": pocket_series,
         "ex_rec_file": recfile_series,
         "ex_rec_pdb": rec_pdb_series,
         "ex_rec_pocket_file": rec_pocket_file_series,
-        "num_pocket_residues": pocket_residue_series
+        "num_pocket_residues": pocket_residue_series,
     }
-    for name, num in zip("xyz", [0,1,2]):
-        df_dict[f"pocket_center_{name}"] = center_series[:,num]
-    for name, num in zip("xyz", [0,1,2]):
-        df_dict[f"pocket_size_{name}"] = bounds_series[:,num]
-        
+    for name, num in zip("xyz", [0, 1, 2]):
+        df_dict[f"pocket_center_{name}"] = center_series[:, num]
+    for name, num in zip("xyz", [0, 1, 2]):
+        df_dict[f"pocket_size_{name}"] = bounds_series[:, num]
+
     for name, series in df_dict.items():
         new_act[name] = series
 
-    ret = new_act.query("num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+    ret = new_act.query(
+        "num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size"
+    ).reset_index(drop=True)
     mask = []
     for i, row in tqdm(ret.iterrows(), total=len(ret)):
         lig_file = get_output_dir(cfg) + "/" + row.lig_file
@@ -779,7 +912,6 @@ def make_final_activities_df(cfg,
 
 
 def make_bigbind_workflow():
-
     sifts_zipped = download_sifts()
     sifts_csv = unzip_sifts(sifts_zipped)
 
@@ -805,81 +937,86 @@ def make_bigbind_workflow():
     activities_filtered = add_sdfs_to_activities(activities_filtered, smiles2filename)
 
     chain2uniprot = get_chain_to_uniprot(con)
-    
-    uniprot2rfs_nofix,\
-    uniprot2lfs,\
-    uniprot2pockets,\
-    pocket2uniprots,\
-    pocket2rfs_nofix,\
-    pocket2lfs = get_crossdocked_maps(cd_rf2lfs_nofix, chain2uniprot)
+
+    (
+        uniprot2rfs_nofix,
+        uniprot2lfs,
+        uniprot2pockets,
+        pocket2uniprots,
+        pocket2rfs_nofix,
+        pocket2lfs,
+    ) = get_crossdocked_maps(cd_rf2lfs_nofix, chain2uniprot)
     # final_uniprots, final_pockets = filter_uniprots(uniprot2pockets,
     #                                                 pocket2uniprots)
-    
 
     comp_dict_file = download_comp_dict()
     comp_dict = load_components_dict(comp_dict_file)
-    
+
     lig_sdfs = download_all_lig_sdfs(uniprot2lfs)
     ligfile2lig = get_all_crystal_ligs(comp_dict, lig_sdfs)
 
-    pocket2rfs_nofix,\
-    pocket2lfs,\
-    ligfile2lig,\
-    ligfile2uff = save_all_structures(cd_dir,
-                                      pocket2uniprots,
-                                      pocket2rfs_nofix,
-                                      pocket2lfs,
-                                      ligfile2lig)
-    
+    pocket2rfs_nofix, pocket2lfs, ligfile2lig, ligfile2uff = save_all_structures(
+        cd_dir, pocket2uniprots, pocket2rfs_nofix, pocket2lfs, ligfile2lig
+    )
+
     pocket2rfs = fix_all_recfiles(pocket2rfs_nofix)
 
-    rec2pocketfile, rec2res_num = save_all_pockets(pocket2rfs, pocket2lfs, ligfile2lig)
+    rf2pocketfile, rf2res_num = save_all_pockets(pocket2rfs, pocket2lfs, ligfile2lig)
     pocket_centers, pocket_sizes = get_all_pocket_bounds(pocket2lfs, ligfile2lig)
 
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
-    # # recfile2struct, pocfile2res_num = get_all_structs_and_res_nums(rec2pocketfile)
-    # pocket_tm_scores = get_all_pocket_tm_scores()# , recfile2struct, pocfile2res_num)
+    pocket_tm_scores = get_all_pocket_tm_scores(rf2pocketfile)
 
-    activities = make_final_activities_df(activities_filtered,
-                                          uniprot2pockets,
-                                          pocket2rfs,
-                                          rec2pocketfile,
-                                          rec2res_num,
-                                          pocket_centers,
-                                          pocket_sizes)
+    activities = make_final_activities_df(
+        activities_filtered,
+        uniprot2pockets,
+        pocket2rfs,
+        rf2pocketfile,
+        rf2res_num,
+        pocket_centers,
+        pocket_sizes,
+    )
+
+    # now let's find the optimal splits
+    full_lig_sim_mat = get_full_tanimoto_matrix(activities, lig_sim_mat)
+    pocket_indexes = get_pocket_indexes(activities)
 
     return Workflow(
         saved_act_unf,
         # cd_rf2lfs,
         # uniprot2lfs,
-        activities,
+        # activities,
         # ligfile2lig,
         # activities
         # pqr_files
         # rec2pocketfile,
-        # pocket_tm_scores
-        # pocket_tm_scores
+        pocket_tm_scores
         # pocket_centers,
-        lig_sim_mat
+        # lig_sim_mat,
     )
+
 
 @task()
 def error(cfg):
     raise Exception("!! This is a test !!")
 
+
 @task()
 def task1(cfg):
     print("!!!1!!!")
+
 
 @task()
 def task2(cfg, x):
     print("!!!2!!!")
 
+
 if __name__ == "__main__":
     import sys
     from utils.cfg_utils import get_config
+
     workflow = make_bigbind_workflow()
     cfg = get_config(sys.argv[1])
 

@@ -221,21 +221,21 @@ def pocket_tm_score(cfg, protein1_pdb, protein2_pdb, poc1_res, poc2_res):
 #             print_exc()
 #     return ret
 
-@simple_task
-def get_all_rec_pairs(cfg, rec2pocketfile, recfile2struct, pocfile2res_num):
-    all_recs = list(rec2pocketfile.keys())
-    return [ (all_recs[i],
-              all_recs[j],
-              recfile2struct[all_recs[i]], 
-              recfile2struct[all_recs[j]],
-              pocfile2res_num[rec2pocketfile[all_recs[i]]],
-              pocfile2res_num[rec2pocketfile[all_recs[j]]]) for j in range(len(all_recs)) for i in range(j) ]
+# @simple_task
+# def get_all_rec_pairs(cfg, rec2pocketfile, recfile2struct, pocfile2res_num):
+#     all_recs = list(rec2pocketfile.keys())
+#     return [ (all_recs[i],
+#               all_recs[j],
+#               recfile2struct[all_recs[i]], 
+#               recfile2struct[all_recs[j]],
+#               pocfile2res_num[rec2pocketfile[all_recs[i]]],
+#               pocfile2res_num[rec2pocketfile[all_recs[j]]]) for j in range(len(all_recs)) for i in range(j) ]
 
-@simple_task
-def postproc_tm_outputs(cfg, all_pairs, tm_scores):
-    ret = {}
-    for (r1, r2, *rest), score in zip(all_pairs, tm_scores):
-        ret[(r1, r2)] = score
+# @simple_task
+# def postproc_tm_outputs(cfg, all_pairs, tm_scores):
+#     ret = {}
+#     for (r1, r2, *rest), score in zip(all_pairs, tm_scores):
+#         ret[(r1, r2)] = score
 
 # def get_all_pocket_tm_scores(rec2pocketfile, recfile2struct, pocfile2res_num):
 #     pairs = get_all_rec_pairs(rec2pocketfile, recfile2struct, pocfile2res_num)
@@ -292,9 +292,19 @@ def get_tm_score_inputs(cfg, rec2pocketfile):
     random.shuffle(ret)
     return ret
 
+@task(max_runtime=0.5)
+def postproc_tm_outputs(cfg, rec2pocketfile, raw_scores):
+    idx2rf = { i: rf for i, rf in enumerate(rec2pocketfile) }
+    ret = {}
+    for score_dict in raw_scores:
+        for (i, j), score in score_dict.items():
+            ret[(idx2rf[i], idx2rf[j])] = score
+    return ret
+
 def get_all_pocket_tm_scores(rec2pocketfile):
     inputs = get_tm_score_inputs(rec2pocketfile)
-    scores = compute_all_tm_scores(inputs)
+    raw_scores = compute_all_tm_scores(inputs)
+    scores = postproc_tm_outputs(rec2pocketfile, raw_scores)
     return scores
 
 

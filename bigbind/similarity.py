@@ -5,6 +5,7 @@ import numpy as np
 from utils.cache import cache
 from bigbind.tanimoto_matrix import get_tanimoto_matrix, get_morgan_fps_parallel
 from old.probis import convert_inter_results_to_json, get_rep_recs
+from utils.task import task
 
 class PocketSimilarityProbis:
     """ Replace with TM score when those come in"""
@@ -112,6 +113,19 @@ class LigSimilarity:
         except KeyError:
             print("This shouldn't happen...")
             return 0.0
+        
+@task(max_runtime=0.2)
+def get_pocket_indexes(cfg, activities):
+    """ Returns a dictionary mapping pockets to the indexes of all
+    rows in the activities dataframe with the pocket """
+    poc_indexes = {}
+    for p1 in tqdm(activities.pocket.unique()):
+        poc_indexes[p1] = np.array(activities.index[activities.pocket == p1], dtype=int)
+    return poc_indexes
+
+@task(max_runtime=0.2)
+def get_pocket_similarity(cfg, pocket_tm_scores):
+    return PocketSimilarityTM(pocket_tm_scores)
 
 def get_edge_nums(tanimoto_mat, poc_sim, poc_indexes, tan_min, tan_max, probis_min, probis_max):
     """ Returns a tuple of the number of pairs satisfying both:
@@ -346,6 +360,6 @@ if __name__ == "__main__":
     print(results)
     print("tan_cutoffs")
     print(list(tan_cutoffs))
-    print("prob_cutoffs")
-    print(list(prob_cutoffs))
+    print("tm_cutoffs")
+    print(list(tm_cutoffs))
                 

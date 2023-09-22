@@ -1,3 +1,5 @@
+from array import array
+from collections import defaultdict
 from functools import partial
 from multiprocessing import Pool, shared_memory
 import random
@@ -6,6 +8,7 @@ from rdkit.Chem import AllChem
 import numpy as np
 import pandas as pd
 from scipy import sparse
+import scipy
 from tqdm import tqdm
 import yaml
 
@@ -88,6 +91,36 @@ def get_tanimoto_matrix(cfg, fps):
         fp_shm.unlink()
         fp_sum_shm.close()
         fp_sum_shm.unlink()
+
+@task()
+def get_full_tanimoto_matrix(cfg, activities, lig_sim_mat):
+    """ Rejiggers the tanimoto matrix so that it's indexed by
+    the indices of the activities dataframe, not the unique lig
+    smiles index """
+        
+    smi_list = list(activities.canonical_smiles.unique())
+    smi2idx = { smi: idx for idx, smi in enumerate(smi_list) }
+    idx2act_idx= defaultdict(set)
+    for act_idx, smi in enumerate(activities.canonical_smiles):
+        idx = smi2idx[smi]
+        idx2act_idx[idx].add(act_idx)
+
+    new_row = array('I')
+    new_col = array('I')
+    new_data = array('f')
+    for i, j, data in zip(tqdm(lig_sim_mat.row), lig_sim_mat.col, lig_sim_mat.data):
+        for i2 in idx2act_idx[i]:
+            for j2 in idx2act_idx[j]:
+                new_row.append(i)
+                new_col.append(j)
+                new_data.append(data)
+
+    new_row = np.array(new_row)
+    new_col = np.array(new_col)
+    new_data = np.array(new_data)
+
+    return scipy.sparse.coo_array((new_data, (new_row, new_col)), shape=lig_sim_mat.shape, copy=False)
+
 
 def main(cfg):
     df = pd.read_csv(f"{cfg['bigbind_folder']}/activities_all.csv")
