@@ -98,7 +98,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = get_config(args.host)
-    workflow = make_bigbind_workflow()
+    workflow = make_bigbind_workflow(cfg)
 
     if args.sync:
         sync_to(cfg)

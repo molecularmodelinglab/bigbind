@@ -36,7 +36,7 @@ def get_alpha_and_beta_coords(structure):
     for model in structure:
         for chain in model:
             for residue in chain:
-                if "CA" in residue: # and "N" in residue and "C" in residue:
+                if is_aa(residue): # and "N" in residue and "C" in residue:
                     alpha_carbon = residue["CA"]  # Standard amino acids
                     alpha_carbon_coordinates.append(alpha_carbon.get_coord())
 
@@ -157,8 +157,10 @@ def pocket_tm_score(cfg, protein1_pdb, protein2_pdb, poc1_res, poc2_res):
 
     # poc1_res = get_all_res_nums(r1_poc_file)
     # poc2_res = get_all_res_nums(r2_poc_file)
-    poc1_res = { seq_index_mapping1[i] for i in poc1_res }
-    poc2_res = { seq_index_mapping2[i] for i in poc2_res }
+
+    # sometimes the "pocket" has extra things hanging around like a stray glycine...
+    poc1_res = { seq_index_mapping1[i] for i in poc1_res if i in seq_index_mapping1 }
+    poc2_res = { seq_index_mapping2[i] for i in poc2_res if i in seq_index_mapping2 }
 
     all_rec1_indexes = poc1_res.intersection({rec2_to_rec1[idx] for idx in poc2_res if idx in rec2_to_rec1})
     all_rec2_indexes = poc2_res.intersection({rec1_to_rec2[idx] for idx in poc1_res if idx in rec1_to_rec2})

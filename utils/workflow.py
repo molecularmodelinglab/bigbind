@@ -16,7 +16,8 @@ class Workflow:
     out_nodes: WorkNode
     node_cache: Dict[WorkNode, Any]
 
-    def __init__(self, *out_nodes):
+    def __init__(self, cfg, *out_nodes):
+        self.cfg = cfg
         self.out_nodes = out_nodes
         self.node_cache = {}
         self.graph, self.nodes = self.get_graph()
@@ -105,10 +106,10 @@ class Workflow:
 
         return ret
 
-    def run(self, cfg, force=False):
+    def run(self, force=False):
         ret = []
         for out_node in self.out_nodes:
-            ret.append(self.run_node(cfg, out_node, force))
+            ret.append(self.run_node(self.cfg, out_node, force))
         return ret
 
     def get_graph(self):
@@ -119,6 +120,8 @@ class Workflow:
         nodes = []
 
         def add_edges(node):
+            if node.task.is_finished(self.cfg):
+                return
             nodes.append(node)
             def add_single_edge(x):
                 if isinstance(x, WorkNode):
@@ -160,6 +163,6 @@ if __name__ == "__main__":
     def test_iter(cfg, x):
         return x*10
 
-    workflow = Workflow(test_iter(test_input()))
     cfg = get_config("local")
-    print(workflow.run(cfg, force=True))
+    workflow = Workflow(cfg, test_iter(test_input()))
+    print(workflow.run(force=True))

@@ -8,7 +8,7 @@ def stringify_cache_key(key):
     return uuid.uuid3(uuid.NAMESPACE_DNS, str(key)).hex
 
 def get_cache_dir(cfg):
-    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "cache")
+    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "local", "cache")
     return ret
 
 def cache(cache_key, version=0.0, disable=False):

@@ -98,7 +98,7 @@ def unzip_sifts(cfg, out_filename, sifts_filename, prev_output=None):
     )
 
 
-@file_task("CrossDocked2022", max_runtime=2)
+@file_task("CrossDocked2022", max_runtime=2, local=True)
 def untar_crossdocked(cfg, out_filename, cd_filename):
     """Hacky -- relies on out_filename being equal to the regular output of tar"""
     out_dir = os.path.dirname(out_filename)
@@ -107,7 +107,7 @@ def untar_crossdocked(cfg, out_filename, cd_filename):
     subprocess.run(cmd, shell=True, check=True)
 
 
-@file_task("chembl.db", max_runtime=200)
+@file_task("chembl.db", max_runtime=200, local=True)
 def untar_chembl(cfg, out_filename, chembl_filename):
     out_dir = os.path.dirname(out_filename)
     cmd = f"tar -xf {chembl_filename} --one-top-level={out_dir}"
@@ -911,7 +911,7 @@ def make_final_activities_df(
     return ret
 
 
-def make_bigbind_workflow():
+def make_bigbind_workflow(cfg):
     sifts_zipped = download_sifts()
     sifts_csv = unzip_sifts(sifts_zipped)
 
@@ -984,6 +984,7 @@ def make_bigbind_workflow():
     pocket_indexes = get_pocket_indexes(activities)
 
     return Workflow(
+        cfg,
         saved_act_unf,
         # cd_rf2lfs,
         # uniprot2lfs,
@@ -1017,17 +1018,19 @@ if __name__ == "__main__":
     import sys
     from utils.cfg_utils import get_config
 
-    workflow = make_bigbind_workflow()
     cfg = get_config(sys.argv[1])
-
+    workflow = make_bigbind_workflow(cfg)
+    for node in workflow.nodes:
+        print(node)
+        
     # workflow = Workflow(error())
     # workflow.run_node(cfg, workflow.nodes[0])
 
     # for node in workflow.nodes:
     #     print(node)
 
-    workflow.prev_run_name = "test"
-    print(workflow.run(cfg))
+    # workflow.prev_run_name = "test"
+    # print(workflow.run())
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)
