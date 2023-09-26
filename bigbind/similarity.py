@@ -288,6 +288,8 @@ def get_edge_num_inputs(cfg, full_lig_sim_mat, poc_sim, poc_indexes):
 def postproc_prob_ratios(cfg, edge_results, activities, arg_list):
     shape = (num_tan, num_tm)
 
+    print(edge_results)
+
     tans = np.array([0.5 * (t1 + t2) for *rest, t1, t2, p1, p2 in arg_list]).reshape(
         shape
     )
