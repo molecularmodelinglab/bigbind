@@ -38,7 +38,7 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
         poc_df[key] = poc_df[key][0]
 
     # poc_df.to_csv(folder + "/activities.csv", index=False)
-    
+
     # take the molecule with median activity from each cluster
     clusters = poc_df.lig_cluster.unique()
     clustered_rows = []
@@ -46,12 +46,12 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
         cluster_df = poc_df.query("lig_cluster == @cluster").reset_index(drop=True)
         median_idx = cluster_df.pchembl_value.sort_values().index[len(cluster_df) // 2]
         clustered_rows.append(cluster_df.loc[median_idx])
-        print(cluster_df.pchembl_value.sort_values(), cluster_df.loc[median_idx])
+        # print(cluster_df.pchembl_value.sort_values(), cluster_df.loc[median_idx])
 
     clustered_df = pd.DataFrame(clustered_rows)
     clustered_df.to_csv(folder + "/activities.csv", index=False)
 
-    save_smiles(folder + "/actives.smi", poc_df.lig_smiles)
+    save_smiles(folder + "/actives.smi", clustered_df.lig_smiles)
 
     rec_file = get_output_dir(cfg) + "/" + poc_df.ex_rec_file[0]
     shutil.copyfile(rec_file, folder + "/rec.pdb")
