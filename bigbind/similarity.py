@@ -345,17 +345,18 @@ def plot_prob_ratios(cfg, tans, tms, prob_ratios):
 
 # force this!
 @task(num_outputs=2, force=True)
-def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim):
+def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=1.5):
     """Finds the optimal TM cutoff and clusters the pockets according
     to this cutoff -- two pockets are in the same cluster if their TM
     score is above the cutoff. Returns a tuple of (cutoff, clusters)"""
 
     # compute optimal TM cutoff
-    cutoff_idx = 0
-    for ratio in prob_ratios.max(axis=0):
-        if ratio > 1.0:
-            continue
-        cutoff_idx += 1
+    cutoff_idx = num_tm - 1
+    for ratio in reversed(prob_ratios.max(axis=0)):
+        if ratio < cutoff_ratio:
+            break
+        cutoff_idx -= 1
+        
     cutoff = tms[0, cutoff_idx]
     print("Optimal TM cutoff:", cutoff)
 
