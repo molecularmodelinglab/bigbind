@@ -294,7 +294,7 @@ def get_tm_score_inputs(cfg, rec2pocketfile):
     random.shuffle(ret)
     return ret
 
-@task(max_runtime=0.5, force=True)
+@task(max_runtime=0.5, force=False)
 def postproc_tm_outputs(cfg, rec2pocketfile, raw_scores):
     idx2rf = { i: "/".join(rf.split("/")[-2:]) for i, rf in enumerate(rec2pocketfile) }
     ret = {}
