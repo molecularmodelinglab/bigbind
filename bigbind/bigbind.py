@@ -966,7 +966,7 @@ def get_lit_pcba_pockets(cfg, con, lit_pcba_dir, uniprot2pockets):
 
 # force this!
 @task(max_runtime=0.2, force=True)
-def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_test_frac=0.1):
+def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_test_frac=0.15):
     """ Returns a dict mapping split name (train, val, test) to pockets.
     Both val and test splits are approx. val_test_frac of total. """
     assert val_test_frac < 0.5
@@ -1256,11 +1256,11 @@ def make_bigbind_workflow(cfg):
     tan_cutoffs, tm_cutoffs, prob_ratios = get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, pocket_indexes)
     plotted_prob_ratios = plot_prob_ratios(tan_cutoffs, tm_cutoffs, prob_ratios)
 
-    tm_cutoff, poc_clusters = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    tm_cutoff, poc_clusters_no_tanimoto = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
     lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
     splits = get_splits(activities, poc_clusters, lit_pcba_pockets, pocket_indexes)
 
-    poc_clusters_tanimoto = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    poc_clusters = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
 
     lig_cluster_idxs = get_lig_clusters(activities, pocket_indexes, lig_smi, lig_sim_mat)
     activities = add_all_clusters_to_act(activities, lig_cluster_idxs, pocket_indexes, poc_clusters)
@@ -1291,13 +1291,13 @@ def make_bigbind_workflow(cfg):
 
     return Workflow(
         cfg,
-        # saved_act_unf,
-        # plotted_prob_ratios,
-        # saved_act,
-        # saved_struct,
-        poc_clusters_tanimoto,
-        # saved_bayesbind,
-        poc_clusters,
+        saved_act_unf,
+        plotted_prob_ratios,
+        saved_act,
+        saved_struct,
+        poc_clusters_no_tanimoto,
+        saved_bayesbind,
+        # poc_clusters,
         # full_scores,
         # activities,
         # pocket_tm_scores,
