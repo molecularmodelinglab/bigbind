@@ -186,7 +186,7 @@ def get_pocket_indexes(cfg, activities):
 
 
 # force this!
-@task(max_runtime=0.2, force=True)
+@task(max_runtime=0.2, force=False)
 def get_pocket_similarity(cfg, pocket_tm_scores):
     return PocketSimilarityTM(pocket_tm_scores)
 
