@@ -1253,7 +1253,7 @@ def make_bigbind_workflow(cfg):
     pocket_indexes = get_pocket_indexes(activities)
     poc_sim = get_pocket_similarity(pocket_tm_scores)
     
-    tm_cutoffs, tan_cutoffs, prob_ratios = get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, pocket_indexes)
+    tan_cutoffs, tm_cutoffs, prob_ratios = get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, pocket_indexes)
     plotted_prob_ratios = plot_prob_ratios(tan_cutoffs, tm_cutoffs, prob_ratios)
 
     tm_cutoff, poc_clusters = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim)
