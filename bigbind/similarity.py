@@ -267,7 +267,7 @@ def compute_edge_nums(cfg, args):
 
 
 # force this!
-compute_all_edge_nums = iter_task(56, 1, force=True)(compute_edge_nums)
+compute_all_edge_nums = iter_task(56, 1, force=False)(compute_edge_nums)
 
 num_tan = 5
 num_tm = 15
