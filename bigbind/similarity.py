@@ -74,6 +74,7 @@ class PocketSimilarityTM:
         self.all_scores = {}
 
         for (r1, r2), score in tqdm(valid_scores.items()):
+            print(r1, r2, score)
             p1 = r1.split("/")[0]
             p2 = r2.split("/")[0]
             # if p1 == p2: continue
@@ -186,7 +187,7 @@ def get_pocket_indexes(cfg, activities):
 
 
 # force this!
-@task(max_runtime=0.2, force=False)
+@task(max_runtime=0.2, force=True)
 def get_pocket_similarity(cfg, pocket_tm_scores):
     return PocketSimilarityTM(pocket_tm_scores)
 
@@ -465,205 +466,205 @@ def get_pocket_clusters_with_tanimoto(
     results = get_all_tan_cluster_edges(inputs)
     return postproc_tan_cluster_edges(results, poc_indexes)
 
-@cache(lambda cfg: "")
-def get_early_poc_tm_sims(cfg):
-    import yaml
-    import numpy as np
-    import pandas as pd
-    import scipy
-    from glob import glob
-    import random
-    import matplotlib.pyplot as plt
-    from tqdm import tqdm, trange
-    from collections import defaultdict
-    from functools import lru_cache
-    import pickle
-    from sklearn.preprocessing import PolynomialFeatures
-    from sklearn import linear_model
-    import networkx as nx
-    from multiprocessing import Pool, shared_memory
+# @cache(lambda cfg: "")
+# def get_early_poc_tm_sims(cfg):
+#     import yaml
+#     import numpy as np
+#     import pandas as pd
+#     import scipy
+#     from glob import glob
+#     import random
+#     import matplotlib.pyplot as plt
+#     from tqdm import tqdm, trange
+#     from collections import defaultdict
+#     from functools import lru_cache
+#     import pickle
+#     from sklearn.preprocessing import PolynomialFeatures
+#     from sklearn import linear_model
+#     import networkx as nx
+#     from multiprocessing import Pool, shared_memory
 
-    from array import array
-    from utils.cache import cache
-    from utils.cfg_utils import get_config
-    from bigbind.pocket_tm_score import (
-        get_alpha_and_beta_coords,
-        get_all_pocket_tm_scores,
-        get_struct,
-    )
-    from bigbind.bigbind import make_bigbind_workflow
+#     from array import array
+#     from utils.cache import cache
+#     from utils.cfg_utils import get_config
+#     from bigbind.pocket_tm_score import (
+#         get_alpha_and_beta_coords,
+#         get_all_pocket_tm_scores,
+#         get_struct,
+#     )
+#     from bigbind.bigbind import make_bigbind_workflow
 
-    workflow = make_bigbind_workflow()
+#     workflow = make_bigbind_workflow()
 
-    node = workflow.find_node("load_act_unfiltered")[0]
-    activities = workflow.run_node(cfg, node)
+#     node = workflow.find_node("load_act_unfiltered")[0]
+#     activities = workflow.run_node(cfg, node)
 
-    node = workflow.find_node("get_tanimoto_matrix")[0]
-    lig_sim_mat = workflow.run_node(cfg, node)
+#     node = workflow.find_node("get_tanimoto_matrix")[0]
+#     lig_sim_mat = workflow.run_node(cfg, node)
 
-    node = workflow.find_node("get_crossdocked_maps")[0]
-    (
-        uniprot2rfs,
-        uniprot2lfs,
-        uniprot2pockets,
-        pocket2uniprots,
-        pocket2rfs_nofix,
-        pocket2lfs,
-    ) = workflow.run_node(cfg, node)
+#     node = workflow.find_node("get_crossdocked_maps")[0]
+#     (
+#         uniprot2rfs,
+#         uniprot2lfs,
+#         uniprot2pockets,
+#         pocket2uniprots,
+#         pocket2rfs_nofix,
+#         pocket2lfs,
+#     ) = workflow.run_node(cfg, node)
 
-    node = workflow.find_node("untar_crossdocked")[0]
-    cd_dir = workflow.run_node(cfg, node)
+#     node = workflow.find_node("untar_crossdocked")[0]
+#     cd_dir = workflow.run_node(cfg, node)
 
-    @cache(lambda cfg: "", disable=False)
-    def get_valid_rfs(cfg):
-        valid_rfs = set()
-        for uniprot, rfs in tqdm(uniprot2rfs.items()):
-            for rf in rfs:
-                full_rf = os.path.join(cd_dir, rf)
-                try:
-                    get_alpha_and_beta_coords(get_struct(full_rf))
-                    valid_rfs.add(rf)
-                except KeyError:
-                    pass
-        return valid_rfs
+#     @cache(lambda cfg: "", disable=False)
+#     def get_valid_rfs(cfg):
+#         valid_rfs = set()
+#         for uniprot, rfs in tqdm(uniprot2rfs.items()):
+#             for rf in rfs:
+#                 full_rf = os.path.join(cd_dir, rf)
+#                 try:
+#                     get_alpha_and_beta_coords(get_struct(full_rf))
+#                     valid_rfs.add(rf)
+#                 except KeyError:
+#                     pass
+#         return valid_rfs
 
-    valid_rfs = get_valid_rfs(cfg)
+#     valid_rfs = get_valid_rfs(cfg)
 
-    @cache(lambda cfg: "", disable=False)
-    def get_valid_act(cfg):
-        valid_uniprots = set()
-        for uniprot, rfs in uniprot2rfs.items():
-            for rf in rfs:
-                if rf in valid_rfs:
-                    valid_uniprots.add(uniprot)
-                    break
-        return activities.query("protein_accession in @valid_uniprots").reset_index(
-            drop=True
-        )
+#     @cache(lambda cfg: "", disable=False)
+#     def get_valid_act(cfg):
+#         valid_uniprots = set()
+#         for uniprot, rfs in uniprot2rfs.items():
+#             for rf in rfs:
+#                 if rf in valid_rfs:
+#                     valid_uniprots.add(uniprot)
+#                     break
+#         return activities.query("protein_accession in @valid_uniprots").reset_index(
+#             drop=True
+#         )
 
-    valid_act = get_valid_act(cfg)
+#     valid_act = get_valid_act(cfg)
 
-    og_dir = "/home/boris/Data/BigBindScratch/test/global/"
-    with open(f"{og_dir}/save_all_pockets/output.pkl", "rb") as f:
-        og_rec2pocfile, _ = pickle.load(f)
+#     og_dir = "/home/boris/Data/BigBindScratch/test/global/"
+#     with open(f"{og_dir}/save_all_pockets/output.pkl", "rb") as f:
+#         og_rec2pocfile, _ = pickle.load(f)
 
-    idx2rf = {}
-    rf2idx = {}
-    valid_indexes = set()
-    for i, rf in enumerate(og_rec2pocfile.keys()):
-        rf = "/".join(rf.split("/")[-2:])
-        idx2rf[i] = rf
-        rf2idx[rf] = i
-        if rf in valid_rfs:
-            valid_indexes.add(i)
+#     idx2rf = {}
+#     rf2idx = {}
+#     valid_indexes = set()
+#     for i, rf in enumerate(og_rec2pocfile.keys()):
+#         rf = "/".join(rf.split("/")[-2:])
+#         idx2rf[i] = rf
+#         rf2idx[rf] = i
+#         if rf in valid_rfs:
+#             valid_indexes.add(i)
 
-    @cache(lambda cfg: "", disable=False)
-    def get_valid_scores(cfg):
-        valid_scores = {}
-        for fname in tqdm(glob(f"{og_dir}compute_rec_tm_score_*/output.pkl")):
-            with open(fname, "rb") as f:
-                res = pickle.load(f)
-                for item in res:
-                    for (i1, i2), score in item.items():
-                        if i1 in valid_indexes and i2 in valid_indexes:
-                            valid_scores[idx2rf[i1], idx2rf[i2]] = score
-                del res
-        return valid_scores
+#     @cache(lambda cfg: "", disable=False)
+#     def get_valid_scores(cfg):
+#         valid_scores = {}
+#         for fname in tqdm(glob(f"{og_dir}compute_rec_tm_score_*/output.pkl")):
+#             with open(fname, "rb") as f:
+#                 res = pickle.load(f)
+#                 for item in res:
+#                     for (i1, i2), score in item.items():
+#                         if i1 in valid_indexes and i2 in valid_indexes:
+#                             valid_scores[idx2rf[i1], idx2rf[i2]] = score
+#                 del res
+#         return valid_scores
 
-    valid_scores = get_valid_scores(cfg)
+#     valid_scores = get_valid_scores(cfg)
 
-    @cache(lambda cfg: "", disable=False)
-    def get_poc_indexes(cfg):
-        ret = {}
-        for rf in tqdm(valid_rfs):
-            poc = rf.split("/")[0]
-            uniprots = pocket2uniprots[poc]
-            poc_indexes = activities.query("protein_accession in @uniprots").index
-            ret[poc] = poc_indexes
-        return ret
+#     @cache(lambda cfg: "", disable=False)
+#     def get_poc_indexes(cfg):
+#         ret = {}
+#         for rf in tqdm(valid_rfs):
+#             poc = rf.split("/")[0]
+#             uniprots = pocket2uniprots[poc]
+#             poc_indexes = activities.query("protein_accession in @uniprots").index
+#             ret[poc] = poc_indexes
+#         return ret
 
-    poc_indexes = get_poc_indexes(cfg)
+#     poc_indexes = get_poc_indexes(cfg)
 
-    smi_list = list(activities.canonical_smiles.unique())
-    smi2idx = {smi: idx for idx, smi in enumerate(smi_list)}
-    idx2act_idx = defaultdict(set)
-    for act_idx, smi in enumerate(activities.canonical_smiles):
-        idx = smi2idx[smi]
-        idx2act_idx[idx].add(act_idx)
+#     smi_list = list(activities.canonical_smiles.unique())
+#     smi2idx = {smi: idx for idx, smi in enumerate(smi_list)}
+#     idx2act_idx = defaultdict(set)
+#     for act_idx, smi in enumerate(activities.canonical_smiles):
+#         idx = smi2idx[smi]
+#         idx2act_idx[idx].add(act_idx)
 
-    # make new tanimoto matrix indexes by activities_unfiltered, not ligand id
-    @cache(lambda cfg: "")
-    def get_new_lig_sim(cfg):
-        smi_list = list(activities.canonical_smiles.unique())
-        smi2idx = {smi: idx for idx, smi in enumerate(smi_list)}
-        idx2act_idx = defaultdict(set)
-        for act_idx, smi in enumerate(activities.canonical_smiles):
-            idx = smi2idx[smi]
-            idx2act_idx[idx].add(act_idx)
+#     # make new tanimoto matrix indexes by activities_unfiltered, not ligand id
+#     @cache(lambda cfg: "")
+#     def get_new_lig_sim(cfg):
+#         smi_list = list(activities.canonical_smiles.unique())
+#         smi2idx = {smi: idx for idx, smi in enumerate(smi_list)}
+#         idx2act_idx = defaultdict(set)
+#         for act_idx, smi in enumerate(activities.canonical_smiles):
+#             idx = smi2idx[smi]
+#             idx2act_idx[idx].add(act_idx)
 
-        new_row = array("I")
-        new_col = array("I")
-        new_data = array("f")
-        for i, j, data in zip(tqdm(lig_sim_mat.row), lig_sim_mat.col, lig_sim_mat.data):
-            for i2 in idx2act_idx[i]:
-                for j2 in idx2act_idx[j]:
-                    new_row.append(i)
-                    new_col.append(j)
-                    new_data.append(data)
-        return np.array(new_row), np.array(new_col), np.array(new_data)
+#         new_row = array("I")
+#         new_col = array("I")
+#         new_data = array("f")
+#         for i, j, data in zip(tqdm(lig_sim_mat.row), lig_sim_mat.col, lig_sim_mat.data):
+#             for i2 in idx2act_idx[i]:
+#                 for j2 in idx2act_idx[j]:
+#                     new_row.append(i)
+#                     new_col.append(j)
+#                     new_data.append(data)
+#         return np.array(new_row), np.array(new_col), np.array(new_data)
 
-    new_row, new_col, new_data = get_new_lig_sim(cfg)
+#     new_row, new_col, new_data = get_new_lig_sim(cfg)
 
-    new_tan_mat = scipy.sparse.coo_array(
-        (new_data, (new_row, new_col)), shape=lig_sim_mat.shape, copy=False
-    )
+#     new_tan_mat = scipy.sparse.coo_array(
+#         (new_data, (new_row, new_col)), shape=lig_sim_mat.shape, copy=False
+#     )
 
-    poc_sim = PocketSimilarityTM(valid_scores)
+#     poc_sim = PocketSimilarityTM(valid_scores)
 
-    return new_tan_mat, poc_sim, poc_indexes, len(valid_act)
+#     return new_tan_mat, poc_sim, poc_indexes, len(valid_act)
 
 
-if __name__ == "__main__":
-    import sys
-    from multiprocessing import Pool
-    from utils.cfg_utils import get_config
+# if __name__ == "__main__":
+#     import sys
+#     from multiprocessing import Pool
+#     from utils.cfg_utils import get_config
 
-    cfg_name = sys.argv[1]
-    pool_size = int(sys.argv[2])
+#     cfg_name = sys.argv[1]
+#     pool_size = int(sys.argv[2])
 
-    cfg = get_config(cfg_name)
-    new_tan_mat, poc_sim, poc_indexes, valid_act_len = get_early_poc_tm_sims(cfg)
+#     cfg = get_config(cfg_name)
+#     new_tan_mat, poc_sim, poc_indexes, valid_act_len = get_early_poc_tm_sims(cfg)
 
-    def f(args):
-        # print("Running", args)
-        return get_edge_nums(new_tan_mat, poc_sim, poc_indexes, *args)
+#     def f(args):
+#         # print("Running", args)
+#         return get_edge_nums(new_tan_mat, poc_sim, poc_indexes, *args)
 
-    num_tan = 8
-    tan_cutoffs = np.linspace(0.4, 1.0, num_tan + 1)
-    num_prob = 12
-    tm_cutoffs = [
-        0.0,
-        0.0,
-        0.2,
-        0.4,
-        0.6,
-        0.8,
-        1.0,
-    ]  # np.linspace(0.0, 1.0, num_prob+1)
-    arg_list = [
-        (t1, t2, p1, p2)
-        for t1, t2 in zip(tan_cutoffs, tan_cutoffs[1:])
-        for p1, p2 in zip(tm_cutoffs, tm_cutoffs[1:])
-    ]
-    # zero_result = f(arg_list[0])
-    # f(arg_list[10])
-    # results = list(map(f, arg_list))
-    with Pool(pool_size) as p:
-        results = list(p.imap(f, arg_list))
+#     num_tan = 8
+#     tan_cutoffs = np.linspace(0.4, 1.0, num_tan + 1)
+#     num_prob = 12
+#     tm_cutoffs = [
+#         0.0,
+#         0.0,
+#         0.2,
+#         0.4,
+#         0.6,
+#         0.8,
+#         1.0,
+#     ]  # np.linspace(0.0, 1.0, num_prob+1)
+#     arg_list = [
+#         (t1, t2, p1, p2)
+#         for t1, t2 in zip(tan_cutoffs, tan_cutoffs[1:])
+#         for p1, p2 in zip(tm_cutoffs, tm_cutoffs[1:])
+#     ]
+#     # zero_result = f(arg_list[0])
+#     # f(arg_list[10])
+#     # results = list(map(f, arg_list))
+#     with Pool(pool_size) as p:
+#         results = list(p.imap(f, arg_list))
 
-    print("results")
-    print(results)
-    print("tan_cutoffs")
-    print(list(tan_cutoffs))
-    print("tm_cutoffs")
-    print(list(tm_cutoffs))
+#     print("results")
+#     print(results)
+#     print("tan_cutoffs")
+#     print(list(tan_cutoffs))
+#     print("tm_cutoffs")
+#     print(list(tm_cutoffs))
