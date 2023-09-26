@@ -151,7 +151,7 @@ class Task:
     def is_finished(self, cfg):
         """ Returns true if we can just call get_output directly,
         using the cached output """
-        if self.simple:
+        if self.simple or self.force:
             return False
         try:
             completed_filename = self.get_completed_filename(cfg)
