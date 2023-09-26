@@ -186,7 +186,7 @@ def get_pocket_indexes(cfg, activities):
 
 
 # force this!
-@task(max_runtime=0.2, force=True)
+@task(max_runtime=0.2, force=False)
 def get_pocket_similarity(cfg, pocket_tm_scores):
     return PocketSimilarityTM(pocket_tm_scores)
 
@@ -267,7 +267,7 @@ def compute_edge_nums(cfg, args):
 
 
 # force this!
-compute_all_edge_nums = iter_task(28, 1, force=True)(compute_edge_nums)
+compute_all_edge_nums = iter_task(28, 1, force=False)(compute_edge_nums)
 
 num_tan = 5
 num_tm = 15
@@ -323,7 +323,7 @@ def get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, poc_inde
 
 # force this!
 @task(force=True)
-def plot_prob_ratios(cfg, tans, tms, prob_ratios, poc_sim):
+def plot_prob_ratios(cfg, tans, tms, prob_ratios):
     fig, ax = plt.subplots()
     contour = ax.contourf(tans, tms, prob_ratios)
     fig.colorbar(contour, ax=ax)
@@ -423,7 +423,7 @@ def get_tan_cluster_edges(cfg, arg):
     return edges
 
 # force this!
-get_all_tan_cluster_edges = iter_task(4, 1, force=True)(get_tan_cluster_edges)
+get_all_tan_cluster_edges = iter_task(4, 1, force=False)(get_tan_cluster_edges)
 
 @simple_task
 def postproc_tan_cluster_edges(cfg, edge_results, poc_indexes):
