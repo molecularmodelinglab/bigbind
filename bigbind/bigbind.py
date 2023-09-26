@@ -1295,7 +1295,7 @@ def make_bigbind_workflow(cfg):
         # plotted_prob_ratios,
         # saved_act,
         # saved_struct,
-        # poc_clusters_tanimoto,
+        poc_clusters_tanimoto,
         # saved_bayesbind,
         poc_clusters,
         # full_scores,
@@ -1345,7 +1345,7 @@ if __name__ == "__main__":
     #     print(node)
 
     workflow.prev_run_name = "v2_fixed"
-    print(workflow.run())
+    workflow.run()
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)
