@@ -60,6 +60,7 @@ class Workflow:
             if self.prev_run_name is not None:
                 fake_cfg = deepcopy(cfg)
                 fake_cfg.run_name = self.prev_run_name
+                # print(node, node.task.is_finished(fake_cfg))
                 if node.task.is_finished(fake_cfg) and (hasattr(node.task, "func") and can_take_kwarg(node.task.func, "prev_output")): 
                     try:
                         prev_output = node.task.get_output(fake_cfg)

@@ -14,4 +14,3 @@ termcolor
 networkx
 omegaconf
 google-cloud-storage
-gsutil

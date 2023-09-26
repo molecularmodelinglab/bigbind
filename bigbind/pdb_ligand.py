@@ -14,6 +14,8 @@ import scipy.spatial as spa
 from Bio.PDB import PDBParser, PDBIO, Select
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
+from utils.cfg_utils import get_output_dir
+
 def to_elem(s):
     return s[0] + s[1:].lower()
 
@@ -61,7 +63,7 @@ def get_lig_url(lig_file):
         seq_id = res.id[1]
         return f"https://models.rcsb.org/v1/{pdb_id}/ligand?auth_seq_id={seq_id}&auth_asym_id={asym_id}&encoding=sdf&filename=lig.sdf"
 
-def save_pockets(rec_files, ligs, lig_dist_cutoff):
+def save_pockets(cfg, rec_files, ligs, lig_dist_cutoff):
 
     out_pockets = {}
     res_numbers = {}
@@ -75,10 +77,11 @@ def save_pockets(rec_files, ligs, lig_dist_cutoff):
     
     for rec_file in rec_files:
         file_pre = rec_file.split(".")[0]
-        outfile = f"{file_pre}_pocket.pdb"
+        outfile = os.path.join(get_output_dir(cfg), f"{file_pre}_pocket.pdb")
+        full_rec_file = os.path.join(get_output_dir(cfg), rec_file)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=PDBConstructionWarning)
-            structure = biopython_parser.get_structure('random_id', rec_file)
+            structure = biopython_parser.get_structure('random_id', full_rec_file)
             rec = structure[0]
             res_indexes, coords = get_rec_coords(rec)
             mask = spa.distance.cdist(coords, all_lig_coords).min(axis=1) < lig_dist_cutoff
@@ -86,7 +89,8 @@ def save_pockets(rec_files, ligs, lig_dist_cutoff):
             io = PDBIO()
             io.set_structure(structure)
             io.save(outfile, PocketSelect(included))
-            out_pockets[rec_file] = outfile
-            res_numbers[rec_file] = len(included)
+        out_pockets[rec_file] = "/".join(outfile.split("/")[-2:])
+        res_numbers[rec_file] = len(included)
+
     return out_pockets, res_numbers
             

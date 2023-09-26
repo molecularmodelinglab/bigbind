@@ -13,11 +13,13 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem
 import signal
+import networkx as nx
 import requests
 from traceback import print_exc
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
-from bigbind.similarity import get_pocket_indexes
+from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_pocket_clusters, get_pocket_indexes, get_pocket_similarity, plot_prob_ratios
+from bigbind.probis import convert_inter_results_to_json, convert_intra_results_to_json, create_all_probis_srfs, find_all_probis_distances, find_representative_rec, get_rep_recs
 
 from utils.cfg_utils import get_output_dir
 from utils.workflow import Workflow
@@ -85,6 +87,11 @@ download_comp_dict = StaticDownloadTask(
     "download_comp_dict", "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif"
 )
 
+download_lit_pcba = StaticDownloadTask(
+    "download_lit_pcba",
+    "https://drugdesign.unistra.fr/LIT-PCBA/Files/full_data.tgz"
+)
+
 # now we gotta unzip everything
 
 
@@ -106,6 +113,14 @@ def untar_crossdocked(cfg, out_filename, cd_filename):
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 
+@file_task("LIT_PCBA", max_runtime=2, local=True)
+def untar_lit_pcba(cfg, out_filename, lit_pcba_filename):
+    """Hacky -- relies on out_filename being equal to the regular output of tar"""
+    out_dir = out_filename
+    os.makedirs(out_dir, exist_ok=True)
+    cmd = f"tar -xf {lit_pcba_filename} --one-top-level={out_dir}"
+    print(f"Running {cmd}")
+    subprocess.run(cmd, shell=True, check=True)
 
 @file_task("chembl.db", max_runtime=200, local=True)
 def untar_chembl(cfg, out_filename, chembl_filename):
@@ -693,14 +708,19 @@ def save_all_structures(
 
 
 @task(max_runtime=3, num_outputs=2)
-def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig):
-    """ """
+def save_all_pockets(cfg, pocket2recs, pocket2ligs, ligfile2lig, prev_output=None):
+    # if prev_output is not None:
+    #     r2p, r2r = prev_output
+    #     r2p_fixed = { "/".join(f.split("/")[-2:]): "/".join(val.split("/")[-2:]) for f, val in r2p.items() }
+    #     r2r_fixed = { "/".join(f.split("/")[-2:]): val for f, val in r2r.items() }
+    #     return r2p_fixed, r2r_fixed
+
     rec2pocketfile = {}
     rec2res_num = {}
     for pocket, recfiles in tqdm(pocket2recs.items()):
         ligfiles = pocket2ligs[pocket]
         ligs = {ligfile2lig[lf] for lf in ligfiles}
-        pocket_files, res_numbers = save_pockets(recfiles, ligs, lig_dist_cutoff=5)
+        pocket_files, res_numbers = save_pockets(cfg, recfiles, ligs, lig_dist_cutoff=5)
         for recfile, pocket_file in pocket_files.items():
             res_num = res_numbers[recfile]
             rec2pocketfile[recfile] = pocket_file
@@ -750,6 +770,9 @@ def get_single_pqr_file(cfg, pdb_file):
     pdb_file_full = get_output_dir(cfg) + "/" + pdb_file
     out_filename = get_output_dir(cfg) + "/" + pdb_file.replace("_nofix.pdb", ".pdb")
 
+    # if os.path.exists(out_filename):
+    #     return "/".join(out_filename.split("/")[-2:])
+
     # old_name = "/home/boris/Data/BigBindScratch/test/global/output/" + pdb_file.replace("_nofix.pdb", ".pqr")
     # if os.path.exists(old_name):
     #     shutil.copyfile(old_name, out_filename)
@@ -767,7 +790,7 @@ def get_single_pqr_file(cfg, pdb_file):
         )
     except subprocess.CalledProcessError:
         return None
-    return out_filename
+    return "/".join(out_filename.split("/")[-2:])
 
 
 compute_pqr_files = iter_task(1, 16, n_cpu=8)(get_single_pqr_file)
@@ -910,6 +933,250 @@ def make_final_activities_df(
     ret = ret[mask].reset_index(drop=True)
     return ret
 
+@simple_task
+def get_fake_pocket_tm_scores(cfg, rf2pocketfile):
+    rfs1 = random.sample(list(rf2pocketfile.keys()), 100)
+    rfs2 = random.sample(list(rf2pocketfile.keys()), 100)
+    ret = {}
+    for rf1 in rfs1:
+        for rf2 in rfs2:
+            ret[(rf1, rf2)] = random.random()
+    return ret
+
+@task(max_runtime=0.2)
+def get_lit_pcba_pockets(cfg, con, lit_pcba_dir, uniprot2pockets):
+
+    pcba_files = glob(lit_pcba_dir + "/*/*.mol2")
+    pcba_pdbs = defaultdict(set) # { f.split("/")[-1].split("_")[0] for f in pcba_files }
+    for f in pcba_files:
+        target = f.split("/")[-2]
+        pdb = f.split("/")[-1].split("_")[0]
+        pcba_pdbs[target].add(pdb)
+    targ2pockets = {}
+    for target, pdbs in pcba_pdbs.items():
+        pdbs_str = ", ".join(map(lambda s: f"'{s}'", pdbs))
+        uniprot_df = pd.read_sql_query(f"select SP_PRIMARY from sifts where PDB in ({pdbs_str})", con)
+        pcba_uniprots = set(uniprot_df.SP_PRIMARY)
+        pcba_pockets = set()
+        for uniprot in pcba_uniprots:
+            pcba_pockets = pcba_pockets.union(uniprot2pockets[uniprot])
+        targ2pockets[target] = pcba_pockets
+    return targ2pockets
+
+# force this!
+@task(max_runtime=0.2, force=False)
+def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_test_frac=0.1):
+    """ Returns a dict mapping split name (train, val, test) to pockets.
+    Both val and test splits are approx. val_test_frac of total. """
+    assert val_test_frac < 0.5
+    split_fracs = {
+        "train": 1.0 - 2*val_test_frac,
+        "val": val_test_frac,
+        "test": val_test_frac,
+    }
+    all_pcba_pockets = set().union(*lit_pcba_pockets.values())
+    
+    # rescale the split fracs so that the fracs are correct after adding the pcba pockets
+    pcba_clusters = [ cluster for cluster in clusters if len(cluster.intersection(all_pcba_pockets)) > 0 ]
+    pcba_indexes = 0
+    for cluster in pcba_clusters:
+        for poc in cluster:
+            if poc in pocket_indexes:
+                pcba_indexes += len(pocket_indexes[poc])
+
+    pcba_frac = pcba_indexes / len(activities)
+    test_res = split_fracs["test"] - pcba_frac
+    no_pcba_fracs = {
+        "train": split_fracs["train"]*(1+test_res),
+        "val": split_fracs["val"]*(1+test_res),
+        "test": max(test_res, 0.0),
+    }
+
+    cur_clusters = [ cluster for cluster in sorted(clusters, key=lambda c: len(c), reverse=True) if cluster not in pcba_clusters ]
+
+    splits = {}
+    for split, frac in no_pcba_fracs.items():
+        cur_pockets = set()
+        desired_len = int(len(activities)*frac)
+        total_clusters = 0
+        total_idxs = 0
+        for cluster in cur_clusters:
+            for pocket in cluster:
+                cur_pockets.add(pocket)
+                total_idxs += len(pocket_indexes[pocket])
+            total_clusters += 1
+            if total_idxs >= desired_len and split != "test":
+                break
+        # print(total_clusters, total_idxs, desired_len, len(cur_clusters))
+        cur_clusters = cur_clusters[total_clusters:]
+        splits[split] = cur_pockets
+
+    # re-add all the LIT-PCBA pockets to test
+    for cluster in clusters:
+        if len(cluster.intersection(all_pcba_pockets)) > 0:
+            for pocket in cluster:
+                splits["test"].add(pocket)
+
+    # assert splits as disjoint
+    for s1, p1 in splits.items():
+        num_idxs = 0
+        for poc in p1:
+            if poc in pocket_indexes:
+                num_idxs += len(pocket_indexes[poc])
+        print(f"{s1} has {len(p1)} pockets and {num_idxs} datapoints")
+        for s2, p2 in splits.items():
+            if s1 == s2: continue
+            assert len(p1.intersection(p2)) == 0
+
+    assert False
+
+    return splits
+
+@task(max_runtime=2)
+def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
+    """ Clusters all the ligands for a given pocket with tanimoto cutoff > 0.7
+    Returns an array of cluster indexes for each ligand  in activities"""
+    lig_sim = LigSimilarity(lig_smi, lig_sim_mat)
+    ret_clusters = np.zeros(len(activities), dtype=np.int32) - 1
+    for poc, indexes in tqdm(poc_indexes.items()):
+        poc_smi = activities.lig_smiles[indexes]
+        G = lig_sim.get_nx_graph(poc_smi)
+
+        clusters = list(nx.connected_components(G))
+        lig2cluster = {}
+        for i, cluster in enumerate(clusters):
+            for lig in cluster:
+                lig2cluster[lig] = i
+
+        # print(poc, len(list(clusters)), len(indexes))
+
+        for idx, smi in zip(indexes, poc_smi):
+            ret_clusters[idx] = lig2cluster[smi]
+
+    assert (ret_clusters >= 0).all()
+
+    return ret_clusters
+
+@task(max_runtime=0.1)
+def add_all_clusters_to_act(cfg, activities, lig_cluster_idxs, poc_indexes, poc_clusters):
+    
+    activities["lig_cluster"] = lig_cluster_idxs
+
+    rec_cluster_idxs = np.zeros(len(activities), dtype=np.int32) - 1
+    for i, cluster in enumerate(poc_clusters):
+        for poc in cluster:
+            if poc in poc_indexes:
+                rec_cluster_idxs[np.array(poc_indexes[poc], dtype=int)] = i
+
+    assert (rec_cluster_idxs >= 0).all()
+
+    activities["rec_cluster"] = rec_cluster_idxs
+
+    return activities
+
+@task(max_runtime=0.5)
+def create_struct_df(cfg,
+                     pocket2recs,
+                     pocket2ligs,
+                     ligfile2lig,
+                     ligfile2uff,
+                     rec2pocketfile,
+                     rec2res_num,
+                     pocket_centers,
+                     pocket_sizes):
+    """ Creates the dataframe from all the struct data we have """
+
+    df_list = []
+
+    for pocket, ligfiles in tqdm(pocket2ligs.items()):
+        recfiles = pocket2recs[pocket]
+        rec_pdb2rec = { recfile.split("/")[-1].split("_")[0]: recfile for recfile in recfiles }
+        current_rec_pdbs = set(rec_pdb2rec.keys())
+        for ligfile in ligfiles:
+            lig_uff_file = ligfile2uff[ligfile]
+            lig_pdb = ligfile.split("/")[-1].split("_")[0]
+            lig = ligfile2lig[ligfile]
+            smiles = Chem.MolToSmiles(lig)
+            
+            # smh sometimes crossdocked has the ligand pdb but not the associated rec pdb
+            if lig_pdb not in rec_pdb2rec: continue
+
+            redock_pdb = lig_pdb
+            if len(current_rec_pdbs) > 1:
+                crossdock_pdb = random.choice(list(current_rec_pdbs - { lig_pdb }))
+            else:
+                crossdock_pdb = "none"
+
+            cur_row = {
+                "pdb": lig_pdb,
+                "pocket": pocket,
+                "lig_smiles": smiles,
+                "lig_crystal_file": "/".join(ligfile.split("/")[-2:]),
+                "lig_uff_file": "/".join(lig_uff_file.split("/")[-2:]),
+            }
+            df_list.append(cur_row)
+
+            for prefix, rec_pdb in (("redock", redock_pdb), ("crossdock", crossdock_pdb)):
+                recfile = rec_pdb2rec[rec_pdb] if rec_pdb != "none" else "none"
+                rec_pocket_file = rec2pocketfile[recfile] if rec_pdb != "none" else "none"
+                cur_row[f"{prefix}_rec_file"] = "/".join(recfile.split("/")[-2:]) if rec_pdb != "none" else "none"
+                cur_row[f"{prefix}_rec_pocket_file"] = "/".join(rec_pocket_file.split("/")[-2:]) if rec_pdb != "none" else "none"
+                cur_row[f"{prefix}_num_pocket_residues"] = rec2res_num[recfile] if rec_pdb != "none" else 0
+
+            center = pocket_centers[pocket]
+            bounds = pocket_sizes[pocket]
+            for name, num in zip("xyz", [0,1,2]):
+                cur_row[f"pocket_center_{name}"] = center[num]
+            for name, num in zip("xyz", [0,1,2]):
+                cur_row[f"pocket_size_{name}"] = bounds[num]
+
+    struct_df = pd.DataFrame(df_list)
+
+    # now filter
+    folder = get_output_dir(cfg)
+
+    struct_df = struct_df.query("lig_uff_file != 'none' and redock_num_pocket_residues >= @max_pocket_residues and crossdock_num_pocket_residues >= @max_pocket_residues and pocket_size_x < @max_pocket_size and pocket_size_y < @max_pocket_size and pocket_size_z < @max_pocket_size").reset_index(drop=True)
+    mask = []
+    for i, row in tqdm(struct_df.iterrows(), total=len(struct_df)):
+        uff_file = folder + "/" + row.lig_uff_file
+        if not os.path.exists(uff_file):
+            print("UFF FILE DOESNT EXIST")
+            mask.append(False)
+            continue
+
+        lig = next(Chem.SDMolSupplier(uff_file, sanitize=True))
+        lig = Chem.RemoveHs(lig)
+
+        uff_smiles = Chem.MolToSmiles(lig, False)
+        reg_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(row.lig_smiles), False)
+
+        if uff_smiles != reg_smiles:
+            print("UFF FILE GOT SMILES WRONG")
+            mask.append(False)
+            continue
+
+        mask.append(True)
+    
+    struct_df = struct_df[mask].reset_index(drop=True)
+    return struct_df
+
+# force this!
+@task(max_runtime=0.1, force=False)
+def save_clustered_structs(cfg, struct_df, splits,):
+    folder = get_output_dir(cfg)
+    struct_df.to_csv(folder + "/structures_all.csv", index=False)
+    for split, pockets in splits.items():
+        split_struct = struct_df.query("pocket in @pockets").reset_index(drop=True)
+        split_struct.to_csv(folder + f"/structures_{split}.csv", index=False)
+
+# force this!
+@task(max_runtime=0.1, force=False)
+def save_clustered_activities(cfg, activities, splits):
+    folder = get_output_dir(cfg)
+    activities.to_csv(folder+ f"/activities_all.csv", index=False)
+    for split, pockets in splits.items():
+        split_act = activities.query("pocket in @pockets").reset_index(drop=True)
+        split_act.to_csv(folder + f"/activities_{split}.csv", index=False)
 
 def make_bigbind_workflow(cfg):
     sifts_zipped = download_sifts()
@@ -917,6 +1184,9 @@ def make_bigbind_workflow(cfg):
 
     crossdocked_tarred = download_crossdocked()
     cd_dir = untar_crossdocked(crossdocked_tarred)
+
+    lit_pcba_tarred = download_lit_pcba()
+    lit_pcba_dir = untar_lit_pcba(lit_pcba_tarred)
 
     chembl_tarred = download_chembl()
     chembl_db_file = untar_chembl(chembl_tarred)
@@ -946,8 +1216,6 @@ def make_bigbind_workflow(cfg):
         pocket2rfs_nofix,
         pocket2lfs,
     ) = get_crossdocked_maps(cd_rf2lfs_nofix, chain2uniprot)
-    # final_uniprots, final_pockets = filter_uniprots(uniprot2pockets,
-    #                                                 pocket2uniprots)
 
     comp_dict_file = download_comp_dict()
     comp_dict = load_components_dict(comp_dict_file)
@@ -967,8 +1235,6 @@ def make_bigbind_workflow(cfg):
     lig_smi, lig_fps = get_morgan_fps_parallel(activities_filtered)
     lig_sim_mat = get_tanimoto_matrix(lig_fps)
 
-    pocket_tm_scores = get_all_pocket_tm_scores(rf2pocketfile)
-
     activities = make_final_activities_df(
         activities_filtered,
         uniprot2pockets,
@@ -979,13 +1245,53 @@ def make_bigbind_workflow(cfg):
         pocket_sizes,
     )
 
+    pocket_tm_scores = get_fake_pocket_tm_scores(rf2pocketfile)
+    # pocket_tm_scores = get_all_pocket_tm_scores(rf2pocketfile)
+
     # now let's find the optimal splits
-    full_lig_sim_mat = get_full_tanimoto_matrix(activities, lig_sim_mat)
+    full_lig_sim_mat = get_full_tanimoto_matrix(activities, lig_smi, lig_sim_mat)
     pocket_indexes = get_pocket_indexes(activities)
+    poc_sim = get_pocket_similarity(pocket_tm_scores)
+    
+    tm_cutoffs, tan_cutoffs, prob_ratios = get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, pocket_indexes)
+    plotted_prob_ratios = plot_prob_ratios(tan_cutoffs, tm_cutoffs, prob_ratios)
+
+    tm_cutoff, poc_clusters = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim)
+    lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
+    splits = get_splits(activities, poc_clusters, lit_pcba_pockets, pocket_indexes)
+
+    lig_cluster_idxs = get_lig_clusters(activities, pocket_indexes, lig_smi, lig_sim_mat)
+    activities = add_all_clusters_to_act(activities, lig_cluster_idxs, pocket_indexes, poc_clusters)
+
+    struct_df = create_struct_df(pocket2rfs,
+                                 pocket2lfs,
+                                 ligfile2lig,
+                                 ligfile2uff,
+                                 rf2pocketfile,
+                                 rf2res_num,
+                                 pocket_centers,
+                                 pocket_sizes)
+    
+    saved_act = save_clustered_activities(activities, splits)
+    saved_struct = save_clustered_structs(struct_df, splits)
+
+    # Probis stuff
+    rec2srf = create_all_probis_srfs(rf2pocketfile)
+    rep_srf2nosql = find_representative_rec(pocket2rfs, rec2srf)
+    rep_scores = convert_intra_results_to_json(rec2srf, rep_srf2nosql)
+    pocket2rep_rec = get_rep_recs(pocket2rfs, rep_scores)
+    srf2nosql = find_all_probis_distances(pocket2rep_rec, rec2srf)
+    full_scores = convert_inter_results_to_json(rec2srf, srf2nosql)
 
     return Workflow(
         cfg,
         saved_act_unf,
+        plotted_prob_ratios,
+        saved_act,
+        saved_struct,
+        full_scores,
+        # activities,
+        # pocket_tm_scores,
         # cd_rf2lfs,
         # uniprot2lfs,
         # activities,
@@ -993,7 +1299,7 @@ def make_bigbind_workflow(cfg):
         # activities
         # pqr_files
         # rec2pocketfile,
-        pocket_tm_scores
+        # pocket_tm_scores,
         # pocket_centers,
         # lig_sim_mat,
     )
@@ -1020,17 +1326,17 @@ if __name__ == "__main__":
 
     cfg = get_config(sys.argv[1])
     workflow = make_bigbind_workflow(cfg)
-    for node in workflow.nodes:
-        print(node)
-        
+    # for node in workflow.nodes:
+    #     print(node)
+
     # workflow = Workflow(error())
     # workflow.run_node(cfg, workflow.nodes[0])
 
     # for node in workflow.nodes:
     #     print(node)
 
-    # workflow.prev_run_name = "test"
-    # print(workflow.run())
+    workflow.prev_run_name = "v2_fixed"
+    print(workflow.run())
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)

@@ -172,9 +172,10 @@ class Task:
         completed_filename = self.get_completed_filename(cfg)
 
         if self.is_finished(cfg):
-            if force:
-                os.remove(completed_filename)
-            else:
+            # if force:
+            #     os.remove(completed_filename)
+            # else:
+            if not force:
                 print(f"Using cached data from {self.name}")
                 return self.get_output(cfg)
         

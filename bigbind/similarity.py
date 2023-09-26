@@ -1,11 +1,16 @@
 from collections import defaultdict
+import os
 from tqdm import tqdm
 import numpy as np
+from multiprocessing import Pool
+import matplotlib.pyplot as plt
+import networkx as nx
 
 from utils.cache import cache
 from bigbind.tanimoto_matrix import get_tanimoto_matrix, get_morgan_fps_parallel
 from old.probis import convert_inter_results_to_json, get_rep_recs
-from utils.task import task
+from utils.cfg_utils import get_figure_dir
+from utils.task import iter_task, simple_task, task
 
 class PocketSimilarityProbis:
     """ Replace with TM score when those come in"""
@@ -97,9 +102,11 @@ class PocketSimilarityTM:
 
 class LigSimilarity:
 
-    def __init__(self, cfg):
-        self.smi_list, _ = get_morgan_fps_parallel.get_output(cfg)
-        self.tanimoto_mat = get_tanimoto_matrix.get_output(cfg)
+    def __init__(self, lig_smi, lig_sim_mat):
+        self.smi_list = lig_smi
+        self.tanimoto_mat = lig_sim_mat
+        # self.smi_list, _ = get_morgan_fps_parallel.get_output(cfg)
+        # self.tanimoto_mat = get_tanimoto_matrix.get_output(cfg)
         self.smi2idx = { smi: idx for idx, smi in enumerate(self.smi_list) }
 
     def get_similarity(self, smi1, smi2):
@@ -114,7 +121,21 @@ class LigSimilarity:
             print("This shouldn't happen...")
             return 0.0
         
-@task(max_runtime=0.2)
+    def get_nx_graph(self, smi_list, tan_cutoff=0.7):
+        """ Returns dict mapping smiles to neighbor smiles"""
+        idxs = np.array([ self.smi2idx[smi] for smi in smi_list])
+        mask = np.logical_and(np.in1d(self.tanimoto_mat.row, idxs), np.in1d(self.tanimoto_mat.col, idxs))
+        cur_row = self.tanimoto_mat.row[mask]
+        cur_col = self.tanimoto_mat.col[mask]
+
+        graph = nx.Graph()
+        for row, col in zip(cur_row, cur_col):
+            graph.add_edge(self.smi_list[row], self.smi_list[col])
+
+        return graph
+
+        
+@task(max_runtime=0.2, force=False)
 def get_pocket_indexes(cfg, activities):
     """ Returns a dictionary mapping pockets to the indexes of all
     rows in the activities dataframe with the pocket """
@@ -123,7 +144,8 @@ def get_pocket_indexes(cfg, activities):
         poc_indexes[p1] = np.array(activities.index[activities.pocket == p1], dtype=int)
     return poc_indexes
 
-@task(max_runtime=0.2)
+# force this!
+@task(max_runtime=0.2, force=False)
 def get_pocket_similarity(cfg, pocket_tm_scores):
     return PocketSimilarityTM(pocket_tm_scores)
 
@@ -136,7 +158,7 @@ def get_edge_nums(tanimoto_mat, poc_sim, poc_indexes, tan_min, tan_max, probis_m
 
     tan_mask = np.logical_and(tanimoto_mat.data >= tan_min, tanimoto_mat.data < tan_max)
     tan_mask = np.logical_and(tan_mask, tanimoto_mat.row != tanimoto_mat.col)
-    cur_tan_data = tanimoto_mat.data[tan_mask]
+    # cur_tan_data = tanimoto_mat.data[tan_mask]
     cur_tan_row = tanimoto_mat.row[tan_mask]
     cur_tan_col = tanimoto_mat.col[tan_mask]
 
@@ -183,6 +205,96 @@ def get_edge_nums(tanimoto_mat, poc_sim, poc_indexes, tan_min, tan_max, probis_m
             both_edges += p2_mask.sum()
 
     return both_edges, lig_edges, rec_edges
+
+def compute_edge_nums(cfg, args):
+    return get_edge_nums(*args)
+
+# force this!
+compute_all_edge_nums = iter_task(1, 1, force=False)(compute_edge_nums)
+
+
+num_tan = 4
+num_tm = 4
+@simple_task
+def get_edge_num_inputs(cfg, full_lig_sim_mat, poc_sim, poc_indexes):
+    """ Returns a list of arguments to be passed to compute_all_edge_nums """
+    tan_cutoffs = np.linspace(0.4, 1.0, num_tan+1)
+    tm_cutoffs = np.array([0.0] + list(np.linspace(0.0, 1.0, num_tm)))
+    arg_list = [(full_lig_sim_mat, poc_sim, poc_indexes, t1, t2, p1, p2) for t1, t2 in zip(tan_cutoffs, tan_cutoffs[1:]) for p1, p2 in zip(tm_cutoffs, tm_cutoffs[1:])]
+    return arg_list
+
+@simple_task
+def postproc_prob_ratios(cfg, edge_results, activities, arg_list):
+
+    shape = (num_tan, num_tm)
+
+    tans = np.array([ 0.5*(t1+t2) for *rest, t1, t2, p1, p2 in arg_list ]).reshape(shape)
+    tms = np.array([ 0.5*(p1+p2) for *rest, t1, t2, p1, p2 in arg_list ]).reshape(shape)
+
+    possible_edges = (len(activities)**2)//2
+    prob_ratios = []
+    for both_edges, lig_edges, rec_edges in edge_results:
+        p_both = both_edges/possible_edges
+        p_rec = rec_edges/possible_edges
+        p_lig = lig_edges/possible_edges
+        ratio = p_both/(p_rec*p_lig)
+        prob_ratios.append(ratio)
+    
+    prob_ratios = np.array(prob_ratios).reshape(shape)
+    return tans, tms, prob_ratios
+postproc_prob_ratios.num_outputs = 3
+
+def get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, poc_indexes):
+    """ Returns a tuple of (tanimoto_cutoffs, probis_cutoffs, prob_ratios) """
+    
+    arg_list = get_edge_num_inputs(full_lig_sim_mat, poc_sim, poc_indexes)
+    results = compute_all_edge_nums(arg_list)
+    prob_ratios = postproc_prob_ratios(results, activities, arg_list)
+
+    return prob_ratios
+
+# force this!
+@task(force=False)
+def plot_prob_ratios(cfg, tans, tms, prob_ratios, poc_sim):
+    fig, ax = plt.subplots()
+    contour = ax.contourf(tans, tms, prob_ratios)
+    fig.colorbar(contour, ax=ax)
+    ax.set_title("P(L,R)/(P(L)*P(R))")
+    ax.set_xlabel("L (Tanimoto similarity)")
+    ax.set_ylabel("R (Pocket TM score)")
+
+    fname = os.path.join(get_figure_dir(cfg), "prob_ratios.png")
+    print("Saving figure to", fname)
+    fig.savefig(fname)
+
+# force this!
+@task(num_outputs=2, force=False)
+def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim):
+
+    # compute optimal TM cutoff
+    cutoff_idx = 0
+    for ratio in prob_ratios.max(axis=0):
+        if ratio > 1.0: continue
+        cutoff_idx += 1
+    cutoff = tms[0, cutoff_idx]
+    print("Optimal TM cutoff:", cutoff)
+
+    # now let's find the pocket clusters
+    G = nx.Graph()
+    for poc in activities.pocket.unique():
+        G.add_node(poc)
+
+    for (p1, p2), score in poc_sim.all_scores.items():
+        if score > cutoff:
+            G.add_edge(p1, p2)
+
+    clusters = list(nx.connected_components(G))
+    print("Found", len(clusters), "clusters")
+
+    biggest_cluster = list(sorted(clusters, key=lambda x: -len(x)))[0]
+    print("Biggest cluster has", len(biggest_cluster), "pockets")
+
+    return cutoff, clusters
 
 
 @cache(lambda cfg: "")

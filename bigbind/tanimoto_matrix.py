@@ -93,15 +93,14 @@ def get_tanimoto_matrix(cfg, fps):
         fp_sum_shm.unlink()
 
 @task()
-def get_full_tanimoto_matrix(cfg, activities, lig_sim_mat):
+def get_full_tanimoto_matrix(cfg, activities, smi_list, lig_sim_mat):
     """ Rejiggers the tanimoto matrix so that it's indexed by
     the indices of the activities dataframe, not the unique lig
     smiles index """
         
-    smi_list = list(activities.canonical_smiles.unique())
     smi2idx = { smi: idx for idx, smi in enumerate(smi_list) }
     idx2act_idx= defaultdict(set)
-    for act_idx, smi in enumerate(activities.canonical_smiles):
+    for act_idx, smi in enumerate(activities.lig_smiles):
         idx = smi2idx[smi]
         idx2act_idx[idx].add(act_idx)
 
