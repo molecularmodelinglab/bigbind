@@ -1291,11 +1291,11 @@ def make_bigbind_workflow(cfg):
 
     return Workflow(
         cfg,
-        saved_act_unf,
+        # saved_act_unf,
         plotted_prob_ratios,
-        saved_act,
-        saved_struct,
-        poc_clusters_tanimoto,
+        # saved_act,
+        # saved_struct,
+        # poc_clusters_tanimoto,
         saved_bayesbind,
         # full_scores,
         # activities,
