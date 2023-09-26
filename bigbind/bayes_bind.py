@@ -53,7 +53,7 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
 
     save_smiles(folder + "/random.smi", X_rand)
 
-def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cutoff=6, cluster_cutoff=200):
+def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cutoff=6, cluster_cutoff=150):
     """ Makes benchmarks for all pockets with at least num_cutoff
     activities below act_cutoff. Num_random is the number of compounds
     to randomly sample from ChEMBL for each benchmark """
@@ -76,10 +76,11 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
 
             poc_df = df.query("pocket == @pocket").reset_index(drop=True)
             low_clusters = len(poc_df.query("pchembl_value < @act_cutoff").lig_cluster.unique())
+            tot_clusters = len(poc_df.lig_cluster.unique())
             if low_clusters < cluster_cutoff:
                 continue
             
-            print(f"Running on {split}/{pocket} {low_clusters=}")
+            print(f"Running on {split}/{pocket} {low_clusters=} {tot_clusters=}}")
             make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random=20000)
 
             for poc in poc2cluster[pocket]:
