@@ -18,7 +18,8 @@ import requests
 from traceback import print_exc
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
-from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_pocket_clusters, get_pocket_indexes, get_pocket_similarity, plot_prob_ratios
+from bigbind.bayes_bind import make_all_bayesbind
+from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_pocket_clusters, get_pocket_clusters_with_tanimoto, get_pocket_indexes, get_pocket_similarity, plot_prob_ratios
 from bigbind.probis import convert_inter_results_to_json, convert_intra_results_to_json, create_all_probis_srfs, find_all_probis_distances, find_representative_rec, get_rep_recs
 
 from utils.cfg_utils import get_output_dir
@@ -964,7 +965,7 @@ def get_lit_pcba_pockets(cfg, con, lit_pcba_dir, uniprot2pockets):
     return targ2pockets
 
 # force this!
-@task(max_runtime=0.2, force=False)
+@task(max_runtime=0.2, force=True)
 def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_test_frac=0.1):
     """ Returns a dict mapping split name (train, val, test) to pockets.
     Both val and test splits are approx. val_test_frac of total. """
@@ -1028,8 +1029,6 @@ def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_
             if s1 == s2: continue
             assert len(p1.intersection(p2)) == 0
 
-    assert False
-
     return splits
 
 @task(max_runtime=2)
@@ -1057,7 +1056,8 @@ def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
 
     return ret_clusters
 
-@task(max_runtime=0.1)
+# force this!
+@task(max_runtime=0.1, force=True)
 def add_all_clusters_to_act(cfg, activities, lig_cluster_idxs, poc_indexes, poc_clusters):
     
     activities["lig_cluster"] = lig_cluster_idxs
@@ -1161,7 +1161,7 @@ def create_struct_df(cfg,
     return struct_df
 
 # force this!
-@task(max_runtime=0.1, force=False)
+@task(max_runtime=0.1, force=True)
 def save_clustered_structs(cfg, struct_df, splits,):
     folder = get_output_dir(cfg)
     struct_df.to_csv(folder + "/structures_all.csv", index=False)
@@ -1170,7 +1170,7 @@ def save_clustered_structs(cfg, struct_df, splits,):
         split_struct.to_csv(folder + f"/structures_{split}.csv", index=False)
 
 # force this!
-@task(max_runtime=0.1, force=False)
+@task(max_runtime=0.1, force=True)
 def save_clustered_activities(cfg, activities, splits):
     folder = get_output_dir(cfg)
     activities.to_csv(folder+ f"/activities_all.csv", index=False)
@@ -1260,6 +1260,8 @@ def make_bigbind_workflow(cfg):
     lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
     splits = get_splits(activities, poc_clusters, lit_pcba_pockets, pocket_indexes)
 
+    poc_clusters_tanimoto = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+
     lig_cluster_idxs = get_lig_clusters(activities, pocket_indexes, lig_smi, lig_sim_mat)
     activities = add_all_clusters_to_act(activities, lig_cluster_idxs, pocket_indexes, poc_clusters)
 
@@ -1283,13 +1285,19 @@ def make_bigbind_workflow(cfg):
     srf2nosql = find_all_probis_distances(pocket2rep_rec, rec2srf)
     full_scores = convert_inter_results_to_json(rec2srf, srf2nosql)
 
+    # BayesBind!
+
+    saved_bayesbind = make_all_bayesbind(saved_act, lig_smi, lig_sim_mat, poc_clusters)
+
     return Workflow(
         cfg,
         saved_act_unf,
         plotted_prob_ratios,
         saved_act,
         saved_struct,
-        full_scores,
+        poc_clusters_tanimoto,
+        saved_bayesbind,
+        # full_scores,
         # activities,
         # pocket_tm_scores,
         # cd_rf2lfs,
