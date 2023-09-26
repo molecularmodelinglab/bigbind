@@ -74,7 +74,6 @@ class PocketSimilarityTM:
         self.all_scores = {}
 
         for (r1, r2), score in tqdm(valid_scores.items()):
-            print(r1, r2, score)
             p1 = r1.split("/")[0]
             p2 = r2.split("/")[0]
             # if p1 == p2: continue
