@@ -1257,10 +1257,11 @@ def make_bigbind_workflow(cfg):
     plotted_prob_ratios = plot_prob_ratios(tan_cutoffs, tm_cutoffs, prob_ratios)
 
     tm_cutoff, poc_clusters_no_tanimoto = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    poc_clusters = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+
+
     lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
     splits = get_splits(activities, poc_clusters, lit_pcba_pockets, pocket_indexes)
-
-    poc_clusters = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
 
     lig_cluster_idxs = get_lig_clusters(activities, pocket_indexes, lig_smi, lig_sim_mat)
     activities = add_all_clusters_to_act(activities, lig_cluster_idxs, pocket_indexes, poc_clusters)
