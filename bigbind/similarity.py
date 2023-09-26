@@ -324,6 +324,11 @@ def get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, poc_inde
 # force this!
 @task(force=True)
 def plot_prob_ratios(cfg, tans, tms, prob_ratios):
+
+    print("tans", tans)
+    print("tms", tms)
+    print("prob_ratios", prob_ratios)
+
     fig, ax = plt.subplots()
     contour = ax.contourf(tans, tms, prob_ratios)
     fig.colorbar(contour, ax=ax)
