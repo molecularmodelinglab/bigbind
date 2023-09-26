@@ -4,6 +4,8 @@ from omegaconf import OmegaConf
 import os
 import shutil
 import random
+
+from tqdm import tqdm
 from bigbind.similarity import LigSimilarity
 
 from utils.cfg_utils import get_bayesbind_dir, get_output_dir
@@ -42,7 +44,7 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
     # take the molecule with median activity from each cluster
     clusters = poc_df.lig_cluster.unique()
     clustered_rows = []
-    for cluster in clusters:
+    for cluster in tqdm(clusters):
         cluster_df = poc_df.query("lig_cluster == @cluster").reset_index(drop=True)
         median_idx = cluster_df.pchembl_value.sort_values().index[len(cluster_df) // 2]
         clustered_rows.append(cluster_df.loc[median_idx])
