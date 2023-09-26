@@ -296,7 +296,7 @@ def get_tm_score_inputs(cfg, rec2pocketfile):
 
 @task(max_runtime=0.5)
 def postproc_tm_outputs(cfg, rec2pocketfile, raw_scores):
-    idx2rf = { i: rf for i, rf in enumerate(rec2pocketfile) }
+    idx2rf = { i: "/".join(rf.split("/")[-2:]) for i, rf in enumerate(rec2pocketfile) }
     ret = {}
     for score_dict in raw_scores:
         for (i, j), score in score_dict.items():
