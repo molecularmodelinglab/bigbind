@@ -1245,8 +1245,8 @@ def make_bigbind_workflow(cfg):
         pocket_sizes,
     )
 
-    pocket_tm_scores = get_fake_pocket_tm_scores(rf2pocketfile)
-    # pocket_tm_scores = get_all_pocket_tm_scores(rf2pocketfile)
+    # pocket_tm_scores = get_fake_pocket_tm_scores(rf2pocketfile)
+    pocket_tm_scores = get_all_pocket_tm_scores(rf2pocketfile)
 
     # now let's find the optimal splits
     full_lig_sim_mat = get_full_tanimoto_matrix(activities, lig_smi, lig_sim_mat)

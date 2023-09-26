@@ -93,7 +93,7 @@ def find_representative_rec(cfg, pocket2recs, rec2srf, rigorous=True):
     return srf2nosql
 
 probis_cpus = 28
-@task(n_cpu=rep_rec_cpus, force=True)
+@task(n_cpu=rep_rec_cpus, force=False)
 def find_all_probis_distances(cfg, pocket2rep_rec, rec2srf, n_cpu=probis_cpus, rigorous=True):
     """ For each pair of srf files, use probis to get the pocket
     similarity between them """
