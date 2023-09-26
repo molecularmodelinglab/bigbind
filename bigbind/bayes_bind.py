@@ -80,7 +80,7 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
             if low_clusters < cluster_cutoff:
                 continue
             
-            print(f"Running on {split}/{pocket} {low_clusters=} {tot_clusters=}}")
+            print(f"Running on {split}/{pocket} {low_clusters=} {tot_clusters=}")
             make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random=20000)
 
             for poc in poc2cluster[pocket]:
