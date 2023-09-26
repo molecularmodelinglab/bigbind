@@ -965,7 +965,7 @@ def get_lit_pcba_pockets(cfg, con, lit_pcba_dir, uniprot2pockets):
     return targ2pockets
 
 # force this!
-@task(max_runtime=0.2, force=True)
+@task(max_runtime=0.2, force=False)
 def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_test_frac=0.15):
     """ Returns a dict mapping split name (train, val, test) to pockets.
     Both val and test splits are approx. val_test_frac of total. """
@@ -1057,7 +1057,7 @@ def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
     return ret_clusters
 
 # force this!
-@task(max_runtime=0.1, force=True)
+@task(max_runtime=0.1, force=False)
 def add_all_clusters_to_act(cfg, activities, lig_cluster_idxs, poc_indexes, poc_clusters):
     
     activities["lig_cluster"] = lig_cluster_idxs
@@ -1161,7 +1161,7 @@ def create_struct_df(cfg,
     return struct_df
 
 # force this!
-@task(max_runtime=0.1, force=True)
+@task(max_runtime=0.1, force=False)
 def save_clustered_structs(cfg, struct_df, splits,):
     folder = get_output_dir(cfg)
     struct_df.to_csv(folder + "/structures_all.csv", index=False)
@@ -1170,7 +1170,7 @@ def save_clustered_structs(cfg, struct_df, splits,):
         split_struct.to_csv(folder + f"/structures_{split}.csv", index=False)
 
 # force this!
-@task(max_runtime=0.1, force=True)
+@task(max_runtime=0.1, force=False)
 def save_clustered_activities(cfg, activities, splits):
     folder = get_output_dir(cfg)
     activities.to_csv(folder+ f"/activities_all.csv", index=False)

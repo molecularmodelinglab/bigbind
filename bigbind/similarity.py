@@ -324,7 +324,7 @@ def get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, poc_inde
 
 
 # force this!
-@task(force=True)
+@task(force=False)
 def plot_prob_ratios(cfg, tans, tms, prob_ratios):
 
     print("tans", tans)
@@ -344,7 +344,7 @@ def plot_prob_ratios(cfg, tans, tms, prob_ratios):
 
 
 # force this!
-@task(num_outputs=2, force=True)
+@task(num_outputs=2, force=False)
 def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=1.5):
     """Finds the optimal TM cutoff and clusters the pockets according
     to this cutoff -- two pockets are in the same cluster if their TM
