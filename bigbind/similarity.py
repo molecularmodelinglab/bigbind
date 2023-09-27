@@ -271,7 +271,7 @@ compute_all_edge_nums = iter_task(56, 1, force=False)(compute_edge_nums)
 
 def compute_edge_nums_probis(cfg, args):
     return get_edge_nums(*args)
-compute_all_edge_nums_probis = iter_task(56, 1, force=True)(compute_edge_nums_probis)
+compute_all_edge_nums_probis = iter_task(56, 1, force=False)(compute_edge_nums_probis)
 
 num_tan = 5
 num_tm = 15
