@@ -197,7 +197,7 @@ def convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous):
 def convert_intra_results_to_json(cfg, rec2srf, srf2nosql, rigorous=False):
     return convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous=rigorous)
 
-@task(max_runtime=0.2, force=False)
+@task(max_runtime=0.2, force=True)
 def convert_inter_results_to_json(cfg, rec2srf, srf2nosql, rigorous=False):
     return convert_probis_results_to_json(cfg, rec2srf, srf2nosql, rigorous=rigorous)
 

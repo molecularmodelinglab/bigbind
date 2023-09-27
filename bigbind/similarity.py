@@ -188,7 +188,7 @@ def get_pocket_indexes(cfg, activities):
 def get_pocket_similarity(cfg, pocket_tm_scores):
     return PocketSimilarityTM(pocket_tm_scores)
 
-@task(max_runtime=0.2, force=False)
+@task(max_runtime=0.2, force=True)
 def get_pocket_similarity_probis(cfg, probis_scores, pocket2rep_rec):
     return PocketSimilarityProbis(probis_scores, pocket2rep_rec)
 
