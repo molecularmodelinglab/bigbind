@@ -17,16 +17,16 @@ from utils.task import iter_task, simple_task, task
 class PocketSimilarityProbis:
     """Replace with TM score when those come in"""
 
-    def __init__(self):
-        cfg = {
-            "bigbind_folder": "/home/boris/Data/BigBindV1",
-            "cache_folder": "/home/boris/Data/BigBindCache",
-            "cache": True,
-            "recalc": [],
-        }
+    def __init__(self, probis_scores, pocket2rep_rec):
+        # cfg = {
+        #     "bigbind_folder": "/home/boris/Data/BigBindV1",
+        #     "cache_folder": "/home/boris/Data/BigBindCache",
+        #     "cache": True,
+        #     "recalc": [],
+        # }
 
-        probis_scores = convert_inter_results_to_json(cfg)
-        pocket2rep_rec = get_rep_recs(cfg)
+        # probis_scores = convert_inter_results_to_json(cfg)
+        # pocket2rep_rec = get_rep_recs(cfg)
 
         rep_rec2pocket = {}
         for poc, rec in pocket2rep_rec.items():
@@ -35,8 +35,6 @@ class PocketSimilarityProbis:
         self.poc2pocs = defaultdict(list)
         self.poc2scores = defaultdict(list)
         self.all_scores = {}
-
-        # raise Exception("Don't know if this works anymore...")
 
         for (r1, r2), score in probis_scores.items():
             p1 = rep_rec2pocket[r1]
@@ -190,6 +188,9 @@ def get_pocket_indexes(cfg, activities):
 def get_pocket_similarity(cfg, pocket_tm_scores):
     return PocketSimilarityTM(pocket_tm_scores)
 
+@task(max_runtime=0.2, force=False)
+def get_pocket_similarity_probis(cfg, probis_scores, pocket2rep_rec):
+    return PocketSimilarityProbis(probis_scores, pocket2rep_rec)
 
 def get_edge_nums(
     tanimoto_mat, poc_sim, poc_indexes, tan_min, tan_max, probis_min, probis_max
@@ -265,9 +266,12 @@ def get_edge_nums(
 def compute_edge_nums(cfg, args):
     return get_edge_nums(*args)
 
-
 # force this!
 compute_all_edge_nums = iter_task(56, 1, force=False)(compute_edge_nums)
+
+def compute_edge_nums_probis(cfg, args):
+    return get_edge_nums(*args)
+compute_all_edge_nums_probis = iter_task(56, 1, force=True)(compute_edge_nums_probis)
 
 num_tan = 5
 num_tm = 15
@@ -283,6 +287,17 @@ def get_edge_num_inputs(cfg, full_lig_sim_mat, poc_sim, poc_indexes):
     ]
     return arg_list
 
+@simple_task
+def get_edge_num_inputs_probis(cfg, full_lig_sim_mat, poc_sim, poc_indexes):
+    """Returns a list of arguments to be passed to compute_all_edge_nums"""
+    tan_cutoffs = np.linspace(0.4, 1.0, num_tan + 1)
+    tm_cutoffs = np.linspace(2.0, 4.0, num_tm + 1)
+    arg_list = [
+        (full_lig_sim_mat, poc_sim, poc_indexes, t1, t2, p1, p2)
+        for t1, t2 in zip(tan_cutoffs, tan_cutoffs[1:])
+        for p1, p2 in zip(tm_cutoffs, tm_cutoffs[1:])
+    ]
+    return arg_list
 
 @simple_task
 def postproc_prob_ratios(cfg, edge_results, activities, arg_list):
@@ -309,9 +324,34 @@ def postproc_prob_ratios(cfg, edge_results, activities, arg_list):
     prob_ratios = np.array(prob_ratios).reshape(shape)
     return tans, tms, prob_ratios
 
-
 postproc_prob_ratios.num_outputs = 3
 
+@simple_task
+def postproc_prob_ratios_probis(cfg, edge_results, activities, arg_list):
+    shape = (num_tan, num_tm)
+
+    print(edge_results)
+
+    tans = np.array([0.5 * (t1 + t2) for *rest, t1, t2, p1, p2 in arg_list]).reshape(
+        shape
+    )
+    tms = np.array([0.5 * (p1 + p2) for *rest, t1, t2, p1, p2 in arg_list]).reshape(
+        shape
+    )
+
+    possible_edges = (len(activities) ** 2) // 2
+    prob_ratios = []
+    for both_edges, lig_edges, rec_edges in edge_results:
+        p_both = both_edges / possible_edges
+        p_rec = rec_edges / possible_edges
+        p_lig = lig_edges / possible_edges
+        ratio = p_both / (p_rec * p_lig)
+        prob_ratios.append(ratio)
+
+    prob_ratios = np.array(prob_ratios).reshape(shape)
+    return tans, tms, prob_ratios
+
+postproc_prob_ratios_probis.num_outputs = 3
 
 def get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, poc_indexes):
     """Returns a tuple of (tanimoto_cutoffs, probis_cutoffs, prob_ratios)"""
@@ -322,6 +362,14 @@ def get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, poc_inde
 
     return prob_ratios
 
+def get_lig_rec_edge_prob_ratios_probis(activities, full_lig_sim_mat, poc_sim, poc_indexes):
+    """Returns a tuple of (tanimoto_cutoffs, probis_cutoffs, prob_ratios)"""
+
+    arg_list = get_edge_num_inputs_probis(full_lig_sim_mat, poc_sim, poc_indexes)
+    results = compute_all_edge_nums_probis(arg_list)
+    prob_ratios = postproc_prob_ratios_probis(results, activities, arg_list)
+
+    return prob_ratios
 
 # force this!
 @task(force=False)
@@ -339,6 +387,24 @@ def plot_prob_ratios(cfg, tans, tms, prob_ratios):
     ax.set_ylabel("R (Pocket TM score)")
 
     fname = os.path.join(get_figure_dir(cfg), "prob_ratios.png")
+    print("Saving figure to", fname)
+    fig.savefig(fname)
+
+@task(force=True)
+def plot_prob_ratios_probis(cfg, tans, tms, prob_ratios):
+
+    print("tans", tans)
+    print("probis scores", tms)
+    print("prob_ratios", prob_ratios)
+
+    fig, ax = plt.subplots()
+    contour = ax.contourf(tans, tms, prob_ratios)
+    fig.colorbar(contour, ax=ax)
+    ax.set_title("P(L,R)/(P(L)*P(R))")
+    ax.set_xlabel("L (Tanimoto similarity)")
+    ax.set_ylabel("R (Probis score)")
+
+    fname = os.path.join(get_figure_dir(cfg), "prob_ratios_probis.png")
     print("Saving figure to", fname)
     fig.savefig(fname)
 

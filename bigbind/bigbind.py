@@ -19,7 +19,7 @@ from traceback import print_exc
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
 from bigbind.bayes_bind import make_all_bayesbind
-from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_pocket_clusters, get_pocket_clusters_with_tanimoto, get_pocket_indexes, get_pocket_similarity, plot_prob_ratios
+from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_lig_rec_edge_prob_ratios_probis, get_pocket_clusters, get_pocket_clusters_with_tanimoto, get_pocket_indexes, get_pocket_similarity, get_pocket_similarity_probis, plot_prob_ratios, plot_prob_ratios_probis
 from bigbind.probis import convert_inter_results_to_json, convert_intra_results_to_json, create_all_probis_srfs, find_all_probis_distances, find_representative_rec, get_rep_recs
 
 from utils.cfg_utils import get_output_dir
@@ -1284,7 +1284,11 @@ def make_bigbind_workflow(cfg):
     rep_scores = convert_intra_results_to_json(rec2srf, rep_srf2nosql)
     pocket2rep_rec = get_rep_recs(pocket2rfs, rep_scores)
     srf2nosql = find_all_probis_distances(pocket2rep_rec, rec2srf)
-    full_scores = convert_inter_results_to_json(rec2srf, srf2nosql)
+    probis_scores = convert_inter_results_to_json(rec2srf, srf2nosql)
+
+    poc_sim_probis = get_pocket_similarity_probis(probis_scores, pocket2rep_rec)
+    tan_cutoffs_probis, probis_cutoffs, prob_ratios_probis = get_lig_rec_edge_prob_ratios_probis(activities, full_lig_sim_mat, poc_sim_probis, pocket_indexes)
+    plotted_prob_ratios_probis = plot_prob_ratios_probis(tan_cutoffs_probis, probis_cutoffs, prob_ratios_probis)
 
     # BayesBind!
 
@@ -1292,12 +1296,15 @@ def make_bigbind_workflow(cfg):
 
     return Workflow(
         cfg,
-        saved_act_unf,
-        plotted_prob_ratios,
-        saved_act,
-        saved_struct,
-        poc_clusters_no_tanimoto,
-        saved_bayesbind,
+        # saved_act_unf,
+        # plotted_prob_ratios,
+        # plotted_prob_ratios_probis,
+        # saved_act,
+        # saved_struct,
+        # poc_clusters_no_tanimoto,
+        # saved_bayesbind,
+        plotted_prob_ratios_probis,
+
         # poc_clusters,
         # full_scores,
         # activities,
@@ -1346,7 +1353,7 @@ if __name__ == "__main__":
     #     print(node)
 
     workflow.prev_run_name = "v2_fixed"
-    workflow.run()
+    print(workflow.run())
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)
