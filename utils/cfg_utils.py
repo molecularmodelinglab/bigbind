@@ -16,8 +16,8 @@ def get_figure_dir(cfg):
     os.makedirs(ret, exist_ok=True)
     return ret
 
-def get_baseline_dir(cfg, program_name):
-    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "baselines", program_name)
+def get_baseline_dir(cfg, program_name, split, pocket):
+    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "baselines", program_name, split, pocket)
     os.makedirs(ret, exist_ok=True)
     return ret
 

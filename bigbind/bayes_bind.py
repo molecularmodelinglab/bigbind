@@ -1,3 +1,4 @@
+import subprocess
 import pandas as pd
 import numpy as np
 from omegaconf import OmegaConf
@@ -51,21 +52,41 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
         # print(cluster_df.pchembl_value.sort_values(), cluster_df.loc[median_idx])
 
     clustered_df = pd.DataFrame(clustered_rows)
-    clustered_df.to_csv(folder + "/activities.csv", index=False)
+    clustered_df.to_csv(folder + "/actives.csv", index=False)
 
     save_smiles(folder + "/actives.smi", clustered_df.lig_smiles)
 
-    rec_file = get_output_dir(cfg) + "/" + poc_df.ex_rec_file[0]
-    shutil.copyfile(rec_file, folder + "/rec.pdb")
+    # rec_file = get_output_dir(cfg) + "/" + poc_df.ex_rec_file[0]
+    # shutil.copyfile(rec_file, folder + "/rec.pdb")
+
+    rec_file_nofix = get_output_dir(cfg) + "/" + poc_df.ex_rec_file[0].replace(".pdb", "_nofix.pdb")
+    shutil.copyfile(rec_file_nofix, folder + "/rec_nofix.pdb")
+
+    # todo: put this in the main bigbind code!
+    pdb_fix_cmd = f"pdbfixer {folder}/rec_nofix.pdb --output {folder}/rec.pdb --add-atoms=heavy --add-residues"
+    print(f"Running: {pdb_fix_cmd}")
+    subprocess.run(pdb_fix_cmd, shell=True, check=True)
 
     poc_file = get_output_dir(cfg) + "/" + poc_df.ex_rec_pocket_file[0]
     shutil.copyfile(poc_file, folder + "/pocket.pdb")
 
-    other_smiles = both_df.query("rec_cluster != @rec_cluster").lig_smiles.unique()
+    rand_df = both_df.query("rec_cluster != @rec_cluster")
+    other_smiles = rand_df.lig_smiles.unique()
+    other_smiles_to_lf = { smi: lf for smi, lf in zip(rand_df.lig_smiles, rand_df.lig_file) }
+
     random.shuffle(other_smiles)
     X_rand = lig_sim.make_diverse_set(other_smiles, num_random)
+    X_lf_rand = [ other_smiles_to_lf[smi] for smi in X_rand ]
 
     save_smiles(folder + "/random.smi", X_rand)
+
+    X_rand_df = pd.DataFrame({ "lig_file": X_lf_rand, "lig_smiles": X_rand })
+    for key in [ "ex_rec_file", "ex_rec_pdb", "ex_rec_pocket_file", "num_pocket_residues",
+                 "pocket_center_x", "pocket_center_y", "pocket_center_z", 
+                 "pocket_size_x", "pocket_size_y", "pocket_size_z" ]:
+        X_rand_df[key] = poc_df[key][0]
+
+    X_rand_df.to_csv(folder + "/random.csv", index=False)    
 
 def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cutoff=6, cluster_cutoff=150):
     """ Makes benchmarks for all pockets with at least num_cutoff

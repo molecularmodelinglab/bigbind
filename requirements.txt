@@ -13,4 +13,7 @@ fabric
 termcolor
 networkx
 omegaconf
+meeko
 google-cloud-storage
+# todo:
+# conda install -c conda-forge pdbfixer

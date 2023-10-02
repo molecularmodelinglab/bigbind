@@ -19,7 +19,8 @@ from traceback import print_exc
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
 from bigbind.bayes_bind import make_all_bayesbind
-from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_lig_rec_edge_prob_ratios_probis, get_pocket_clusters, get_pocket_clusters_with_tanimoto, get_pocket_indexes, get_pocket_similarity, get_pocket_similarity_probis, plot_prob_ratios, plot_prob_ratios_probis
+from bigbind.knn import compare_probis_and_pocket_tm
+from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_lig_rec_edge_prob_ratios_probis, get_pocket_clusters, get_pocket_clusters_probis, get_pocket_clusters_with_tanimoto, get_pocket_clusters_with_tanimoto_probis, get_pocket_indexes, get_pocket_similarity, get_pocket_similarity_probis, plot_prob_ratios, plot_prob_ratios_probis
 from bigbind.probis import convert_inter_results_to_json, convert_intra_results_to_json, create_all_probis_srfs, find_all_probis_distances, find_representative_rec, get_rep_recs
 
 from utils.cfg_utils import get_output_dir
@@ -981,6 +982,76 @@ def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_
     pcba_clusters = [ cluster for cluster in clusters if len(cluster.intersection(all_pcba_pockets)) > 0 ]
     pcba_indexes = 0
     for cluster in pcba_clusters:
+        cluster_size = 0
+        for poc in cluster:
+            if poc in pocket_indexes:
+                pcba_indexes += len(pocket_indexes[poc])
+                cluster_size += len(pocket_indexes[poc])
+        print(len(cluster), cluster_size)
+
+    pcba_frac = pcba_indexes / len(activities)
+    test_res = split_fracs["test"] - pcba_frac
+    no_pcba_fracs = {
+        "train": split_fracs["train"]*(1+test_res),
+        "val": split_fracs["val"]*(1+test_res),
+        "test": max(test_res, 0.0),
+    }
+    cur_clusters = [ cluster for cluster in sorted(clusters, key=lambda c: len(c), reverse=True) if cluster not in pcba_clusters ]
+
+    splits = {}
+    for split, frac in no_pcba_fracs.items():
+        cur_pockets = set()
+        desired_len = int(len(activities)*frac)
+        total_clusters = 0
+        total_idxs = 0
+        for cluster in cur_clusters:
+            for pocket in cluster:
+                cur_pockets.add(pocket)
+                if pocket in pocket_indexes:
+                    total_idxs += len(pocket_indexes[pocket])
+            total_clusters += 1
+            if total_idxs >= desired_len and split != "test":
+                break
+        # print(total_clusters, total_idxs, desired_len, len(cur_clusters))
+        cur_clusters = cur_clusters[total_clusters:]
+        splits[split] = cur_pockets
+
+    # re-add all the LIT-PCBA pockets to test
+    for cluster in clusters:
+        if len(cluster.intersection(all_pcba_pockets)) > 0:
+            for pocket in cluster:
+                splits["test"].add(pocket)
+
+    # assert splits as disjoint
+    for s1, p1 in splits.items():
+        num_idxs = 0
+        for poc in p1:
+            if poc in pocket_indexes:
+                num_idxs += len(pocket_indexes[poc])
+        print(f"{s1} has {len(p1)} pockets and {num_idxs} datapoints")
+        for s2, p2 in splits.items():
+            if s1 == s2: continue
+            assert len(p1.intersection(p2)) == 0
+
+    return splits
+
+# force this!
+@task(max_runtime=0.2, force=False)
+def get_splits_probis(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_test_frac=0.15):
+    """ Returns a dict mapping split name (train, val, test) to pockets.
+    Both val and test splits are approx. val_test_frac of total. """
+    assert val_test_frac < 0.5
+    split_fracs = {
+        "train": 1.0 - 2*val_test_frac,
+        "val": val_test_frac,
+        "test": val_test_frac,
+    }
+    all_pcba_pockets = set().union(*lit_pcba_pockets.values())
+    
+    # rescale the split fracs so that the fracs are correct after adding the pcba pockets
+    pcba_clusters = [ cluster for cluster in clusters if len(cluster.intersection(all_pcba_pockets)) > 0 ]
+    pcba_indexes = 0
+    for cluster in pcba_clusters:
         for poc in cluster:
             if poc in pocket_indexes:
                 pcba_indexes += len(pocket_indexes[poc])
@@ -1004,7 +1075,8 @@ def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_
         for cluster in cur_clusters:
             for pocket in cluster:
                 cur_pockets.add(pocket)
-                total_idxs += len(pocket_indexes[pocket])
+                if pocket in pocket_indexes:
+                    total_idxs += len(pocket_indexes[pocket])
             total_clusters += 1
             if total_idxs >= desired_len and split != "test":
                 break
@@ -1174,9 +1246,85 @@ def save_clustered_structs(cfg, struct_df, splits,):
 def save_clustered_activities(cfg, activities, splits):
     folder = get_output_dir(cfg)
     activities.to_csv(folder+ f"/activities_all.csv", index=False)
+    split2df = {}
     for split, pockets in splits.items():
         split_act = activities.query("pocket in @pockets").reset_index(drop=True)
         split_act.to_csv(folder + f"/activities_{split}.csv", index=False)
+        split2df[split] = split_act
+    return split2df
+
+@task(max_runtime=0.1, force=False)
+def get_clustered_activities_probis(cfg, activities, splits):
+    split2df = {}
+    for split, pockets in splits.items():
+        split_act = activities.query("pocket in @pockets").reset_index(drop=True)
+        split2df[split] = split_act
+    return split2df
+
+def make_sna_df(df, neg_ratio, smiles2clusters):
+    """ Adds (putative) negative examples to the dataframe. Neg_ratio
+    ratio of putative inactives to the original df length """
+
+    all_rows = []
+    for i, row in tqdm(df.iterrows(), total=len(df)):
+        all_rows.append(row)
+        my_clusters = smiles2clusters[row.lig_smiles]
+        for i in range(neg_ratio):
+            # find a ligand that isn't known to bind to anything
+            # in the cluster
+            while True:
+                neg_idx = random.randint(0, len(df)-1)
+                neg_row = df.iloc[neg_idx]
+                neg_clusters = smiles2clusters[neg_row.lig_smiles]
+                if len(neg_clusters.intersection(my_clusters)) == 0:
+                    break
+            new_row = deepcopy(row)
+            new_row.lig_smiles = neg_row.lig_smiles
+            new_row.lig_file = neg_row.lig_file
+            new_row.standard_value = np.nan
+            new_row.pchembl_value = np.nan
+            new_row.lig_cluster = np.nan
+            new_row.active = False
+            all_rows.append(new_row)
+    sna_df = pd.DataFrame(all_rows).reset_index(drop=True)
+    return sna_df
+
+@task(max_runtime=0.1, force=False)
+def get_smiles_to_clusters(cfg, activities):
+    smiles2clusters = defaultdict(set)
+    for i, row in tqdm(activities.iterrows(), total=len(activities)):
+        smiles2clusters[row.lig_smiles].add(row.rec_cluster)
+    return smiles2clusters
+
+@task(max_runtime=0.1, force=False)
+def get_smiles_to_clusters_probis(cfg, activities):
+    smiles2clusters = defaultdict(set)
+    for i, row in tqdm(activities.iterrows(), total=len(activities)):
+        smiles2clusters[row.lig_smiles].add(row.rec_cluster)
+    return smiles2clusters
+
+@task(force=False)
+def save_all_sna_dfs(cfg, smiles2clusters, split2df, neg_ratio=1):
+
+    out_split2df = {}
+    for split, df in split2df.items():
+        sna_df = make_sna_df(df, neg_ratio, smiles2clusters)
+        out_file = get_output_dir(cfg) + f"/activities_sna_{neg_ratio}_{split}.csv"
+        print(f"Saving SNA activities to {out_file}")
+        sna_df.to_csv(out_file, index=False)
+        out_split2df[split] = sna_df
+
+    return out_split2df
+
+@task(force=False)
+def get_all_sna_dfs_probis(cfg, smiles2clusters, split2df, neg_ratio=1):
+
+    out_split2df = {}
+    for split, df in split2df.items():
+        sna_df = make_sna_df(df, neg_ratio, smiles2clusters)
+        out_split2df[split] = sna_df
+
+    return out_split2df
 
 def make_bigbind_workflow(cfg):
     sifts_zipped = download_sifts()
@@ -1256,8 +1404,8 @@ def make_bigbind_workflow(cfg):
     tan_cutoffs, tm_cutoffs, prob_ratios = get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, pocket_indexes)
     plotted_prob_ratios = plot_prob_ratios(tan_cutoffs, tm_cutoffs, prob_ratios)
 
-    tm_cutoff, poc_clusters_no_tanimoto = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
-    poc_clusters = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    tm_cutoff, poc_clusters = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    poc_clusters_tan = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
 
 
     lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
@@ -1275,8 +1423,12 @@ def make_bigbind_workflow(cfg):
                                  pocket_centers,
                                  pocket_sizes)
     
-    saved_act = save_clustered_activities(activities, splits)
+    split2act_df = save_clustered_activities(activities, splits)
     saved_struct = save_clustered_structs(struct_df, splits)
+
+    # SNA
+    smiles2clusters = get_smiles_to_clusters(activities)
+    split2sna_df = save_all_sna_dfs(smiles2clusters, split2act_df, neg_ratio=1)
 
     # Probis stuff
     rec2srf = create_all_probis_srfs(rf2pocketfile)
@@ -1290,35 +1442,49 @@ def make_bigbind_workflow(cfg):
     tan_cutoffs_probis, probis_cutoffs, prob_ratios_probis = get_lig_rec_edge_prob_ratios_probis(activities, full_lig_sim_mat, poc_sim_probis, pocket_indexes)
     plotted_prob_ratios_probis = plot_prob_ratios_probis(tan_cutoffs_probis, probis_cutoffs, prob_ratios_probis)
 
+    probis_cutoff, poc_clusters_probis = get_pocket_clusters_probis(activities, probis_cutoffs, prob_ratios_probis, poc_sim_probis, pocket_indexes)
+    poc_clusters_probis_tan = get_pocket_clusters_with_tanimoto_probis(full_lig_sim_mat, probis_cutoffs, prob_ratios_probis, poc_sim_probis, pocket_indexes)
+    
+    splits_probis = get_splits_probis(activities, poc_clusters_probis, lit_pcba_pockets, pocket_indexes)
+    split2act_df_probis = get_clustered_activities_probis(activities, splits_probis)
+    smiles2clusters_probis = get_smiles_to_clusters_probis(activities)
+    split2sna_df_probis = get_all_sna_dfs_probis(smiles2clusters_probis, split2act_df_probis, neg_ratio=1)
+
+    # Finally, compare probis vs pocket tm splits by seeing KNN performance
+    tm_vs_probis = compare_probis_and_pocket_tm(poc_clusters,
+                                                poc_clusters_probis,
+                                                split2act_df,
+                                                split2sna_df,
+                                                split2act_df_probis,
+                                                split2sna_df_probis,
+                                                lig_smi, 
+                                                lig_sim_mat,
+                                                poc_sim,
+                                                poc_sim_probis,
+                                                tan_cutoffs,
+                                                tm_cutoffs,
+                                                probis_cutoffs,
+                                                prob_ratios,
+                                                prob_ratios_probis)
+
     # BayesBind!
 
-    saved_bayesbind = make_all_bayesbind(saved_act, lig_smi, lig_sim_mat, poc_clusters)
+    saved_bayesbind = make_all_bayesbind(split2act_df, lig_smi, lig_sim_mat, poc_clusters)
 
     return Workflow(
         cfg,
-        # saved_act_unf,
-        # plotted_prob_ratios,
-        # plotted_prob_ratios_probis,
-        # saved_act,
-        # saved_struct,
-        # poc_clusters_no_tanimoto,
-        # saved_bayesbind,
-        plotted_prob_ratios_probis,
-
         # poc_clusters,
-        # full_scores,
-        # activities,
-        # pocket_tm_scores,
-        # cd_rf2lfs,
-        # uniprot2lfs,
-        # activities,
-        # ligfile2lig,
-        # activities
-        # pqr_files
-        # rec2pocketfile,
-        # pocket_tm_scores,
-        # pocket_centers,
-        # lig_sim_mat,
+        # poc_clusters_probis,
+        saved_act_unf,
+        plotted_prob_ratios,
+        plotted_prob_ratios_probis,
+        split2act_df,
+        split2sna_df,
+        saved_struct,
+        saved_bayesbind,
+        plotted_prob_ratios_probis,
+        tm_vs_probis,
+        splits,
     )
 
 
@@ -1353,7 +1519,7 @@ if __name__ == "__main__":
     #     print(node)
 
     workflow.prev_run_name = "v2_fixed"
-    print(workflow.run())
+    workflow.run()
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
     # levels = workflow.get_levels(cd_nodes)

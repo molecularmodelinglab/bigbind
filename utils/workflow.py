@@ -20,10 +20,11 @@ class Workflow:
         self.cfg = cfg
         self.out_nodes = out_nodes
         self.node_cache = {}
-        self.graph, self.nodes = self.get_graph()
+        self.graph = self.get_graph()
+        self.nodes = self.get_all_nodes()
 
         self.name_to_nodes = defaultdict(list)
-        for node in self.graph.nodes:
+        for node in self.nodes:
             name = node.task.name
             self.name_to_nodes[name].append(node)
 
@@ -35,6 +36,12 @@ class Workflow:
     def find_node(self, task_name: str):
         """ Returns a list of all nodes with the task_name """
         return self.name_to_nodes[task_name]
+    
+    def run_node_from_name(self, cfg, task_name: str, force=False):
+        """ Runs all nodes with task_name """
+        nodes = self.find_node(task_name)
+        assert len(nodes) == 1, f"Found {len(nodes)} nodes with name {task_name}"
+        return self.run_node(cfg, nodes[0], force)
 
     def run_node(self, cfg, node: WorkNode, force=False):
         """ Run a single node"""
@@ -78,7 +85,7 @@ class Workflow:
             self.node_cache[node] = ret
 
             # sync everything to google cloud
-            if "gcloud" in cfg and not node.task.simple:
+            if "gcloud" in cfg and not node.task.simple and False:
                 global gs_bucket
 
                 if gs_bucket is None:
@@ -135,6 +142,25 @@ class Workflow:
             add_edges(out_node)
 
         return graph, nodes
+    
+    def get_all_nodes(self):
+        """ Returns a list of all nodes in the workflow """
+        nodes = []
+
+        def add_nodes(node):
+            if node in nodes:
+                return
+            nodes.append(node)
+            def add_single_node(x):
+                if isinstance(x, WorkNode):
+                    add_nodes(x)
+            recursive_map(add_single_node, node.args)
+            recursive_map(add_single_node, node.kwargs)
+        
+        for out_node in self.out_nodes:
+            add_nodes(out_node)
+
+        return nodes
 
     def get_levels(self, nodes):
         """ Runs BFS on the DAG graph starting from nodes. Returns a list

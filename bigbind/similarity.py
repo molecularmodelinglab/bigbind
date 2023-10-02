@@ -303,8 +303,6 @@ def get_edge_num_inputs_probis(cfg, full_lig_sim_mat, poc_sim, poc_indexes):
 def postproc_prob_ratios(cfg, edge_results, activities, arg_list):
     shape = (num_tan, num_tm)
 
-    print(edge_results)
-
     tans = np.array([0.5 * (t1 + t2) for *rest, t1, t2, p1, p2 in arg_list]).reshape(
         shape
     )
@@ -329,8 +327,6 @@ postproc_prob_ratios.num_outputs = 3
 @simple_task
 def postproc_prob_ratios_probis(cfg, edge_results, activities, arg_list):
     shape = (num_tan, num_tm)
-
-    print(edge_results)
 
     tans = np.array([0.5 * (t1 + t2) for *rest, t1, t2, p1, p2 in arg_list]).reshape(
         shape
@@ -390,7 +386,7 @@ def plot_prob_ratios(cfg, tans, tms, prob_ratios):
     print("Saving figure to", fname)
     fig.savefig(fname)
 
-@task(force=True)
+@task(force=False)
 def plot_prob_ratios_probis(cfg, tans, tms, prob_ratios):
 
     print("tans", tans)
@@ -409,22 +405,68 @@ def plot_prob_ratios_probis(cfg, tans, tms, prob_ratios):
     fig.savefig(fname)
 
 
-# force this!
-@task(num_outputs=2, force=False)
-def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=1.5):
-    """Finds the optimal TM cutoff and clusters the pockets according
-    to this cutoff -- two pockets are in the same cluster if their TM
-    score is above the cutoff. Returns a tuple of (cutoff, clusters)"""
-
-    # compute optimal TM cutoff
+def get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio):
     cutoff_idx = num_tm - 1
     for ratio in reversed(prob_ratios.max(axis=0)):
+        # print(ratio, cutoff_idx)
         if ratio < cutoff_ratio:
             break
         cutoff_idx -= 1
         
-    cutoff = tms[0, cutoff_idx]
+    # cutoff = 0.5*(tms[0, cutoff_idx] + tms[0, cutoff_idx+1])
+    cutoff = tms[0, cutoff_idx+1]
+    return cutoff
+
+CUTOFF_RATIO = 7.5
+
+# force this!
+@task(num_outputs=2, force=False)
+def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
+    """Finds the optimal TM cutoff and clusters the pockets according
+    to this cutoff -- two pockets are in the same cluster if their TM
+    score is above the cutoff. Returns a tuple of (cutoff, clusters)"""
+
+    cutoff = get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio)
     print("Optimal TM cutoff:", cutoff)
+
+    # now let's find the pocket clusters
+    G = nx.Graph()
+    for poc in activities.pocket.unique():
+        G.add_node(poc)
+
+    for (p1, p2), score in poc_sim.all_scores.items():
+        if score > cutoff:
+            G.add_edge(p1, p2)
+
+    clusters = list(nx.connected_components(G))
+    print("Found", len(clusters), "clusters")
+
+    biggest_cluster = list(sorted(clusters, key=lambda x: -len(x)))[0]
+
+    for cluster in clusters:
+        for poc in cluster:
+            if "CAH" in poc:
+                print(cluster)
+                break
+
+    num_idxs = 0 
+    for poc in biggest_cluster:
+        if poc in poc_indexes:
+            num_idxs += len(poc_indexes[poc])
+
+    print("Biggest cluster has", len(biggest_cluster), "pockets and", num_idxs, "datapoints")
+
+    return cutoff, clusters
+
+# force this!
+@task(num_outputs=2, force=False)
+def get_pocket_clusters_probis(cfg, activities, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
+    """Finds the optimal TM cutoff and clusters the pockets according
+    to this cutoff -- two pockets are in the same cluster if their TM
+    score is above the cutoff. Returns a tuple of (cutoff, clusters)"""
+
+    cutoff = get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio)
+    print("Optimal Probis cutoff:", cutoff)
 
     # now let's find the pocket clusters
     G = nx.Graph()
@@ -445,21 +487,20 @@ def get_pocket_clusters(cfg, activities, tms, prob_ratios, poc_sim, poc_indexes,
         if poc in poc_indexes:
             num_idxs += len(poc_indexes[poc])
 
-    print("Biggest cluster has", len(biggest_cluster), "pockets and", num_idxs, "datapoints")
+    for cluster in clusters:
+        for poc in cluster:
+            if "CAH" in poc:
+                print(cluster)
+                break
+
+    print("Biggest cluster has", len(biggest_cluster), "pockets and", num_idxs, "datapoints (probis)")
 
     return cutoff, clusters
 
-
 @simple_task
-def get_tan_cluster_inputs(cfg, full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes):
+def get_tan_cluster_inputs(cfg, full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
     
-    # compute optimal TM cutoff
-    cutoff_idx = 0
-    for ratio in prob_ratios.max(axis=0):
-        if ratio > 1.0:
-            continue
-        cutoff_idx += 1
-    cutoff = tms[0, cutoff_idx]
+    cutoff = get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio)
     print("Optimal TM cutoff:", cutoff)
 
     args = []
@@ -489,7 +530,7 @@ def get_tan_cluster_edges(cfg, arg):
             if score > high_cutoff:
                 edges.append((p1, p2))
             else:
-                p2_mask = np.in1d(full_lig_sim_mat.row, poc_indexes[p2])
+                p2_mask = np.in1d(full_lig_sim_mat.col, poc_indexes[p2])
                 both_mask = p1_mask & p2_mask
                 if both_mask.sum() > 0:
                     edges.append((p1, p2))
@@ -531,6 +572,83 @@ def get_pocket_clusters_with_tanimoto(
     inputs = get_tan_cluster_inputs(full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes)
     results = get_all_tan_cluster_edges(inputs)
     return postproc_tan_cluster_edges(results, poc_indexes)
+
+
+@simple_task
+def get_tan_cluster_inputs_probis(cfg, full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
+    
+    cutoff = get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio)
+    print("Optimal Probis cutoff:", cutoff)
+
+    args = []
+    for poc in poc_indexes:
+        args.append((poc, poc_sim, cutoff, full_lig_sim_mat, poc_indexes))
+
+    random.shuffle(args)
+
+    return args
+
+def get_tan_cluster_edges_probis(cfg, arg):
+    """ Creates an edge between two pockets if their TM score is above the high cutoff
+    OR their tanimoto similarity is above the tan cutoff and their poc simiilarity is
+    above the low cutoff """
+
+    p1, poc_sim, low_cutoff, full_lig_sim_mat, poc_indexes = arg
+
+    high_cutoff = 3.5
+    tan_cutoff = 0.4
+    assert tan_cutoff == 0.4
+
+    edges = []
+    p1_mask = np.in1d(full_lig_sim_mat.row, poc_indexes[p1])
+
+    for p2, score in zip(poc_sim.poc2pocs[p1], poc_sim.poc2scores[p1]):
+        if p2 in poc_indexes and score > low_cutoff:
+            if score > high_cutoff:
+                edges.append((p1, p2))
+            else:
+                p2_mask = np.in1d(full_lig_sim_mat.col, poc_indexes[p2])
+                both_mask = p1_mask & p2_mask
+                if both_mask.sum() > 0:
+                    edges.append((p1, p2))
+
+    return edges
+
+# force this!
+get_all_tan_cluster_edges_probis = iter_task(4, 1, force=False)(get_tan_cluster_edges_probis)
+
+@simple_task
+def postproc_tan_cluster_edges_probis(cfg, edge_results, poc_indexes):
+
+    # now let's find the pocket clusters
+    G = nx.Graph()
+    for poc in poc_indexes:
+        G.add_node(poc)
+
+    for edges in edge_results:
+        for p1, p2 in edges:
+            G.add_edge(p1, p2)
+
+    clusters = list(nx.connected_components(G))
+    print("Found", len(clusters), "clusters (w/ tanimoto and probis))")
+
+    biggest_cluster = list(sorted(clusters, key=lambda x: -len(x)))[0]
+
+    num_idxs = 0 
+    for poc in biggest_cluster:
+        if poc in poc_indexes:
+            num_idxs += len(poc_indexes[poc])
+
+    print("Biggest cluster has", len(biggest_cluster), "pockets and", num_idxs, "datapoints (w/ tanimoto and probis)")
+
+    return clusters
+
+def get_pocket_clusters_with_tanimoto_probis(
+    full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes
+):
+    inputs = get_tan_cluster_inputs_probis(full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes)
+    results = get_all_tan_cluster_edges_probis(inputs)
+    return postproc_tan_cluster_edges_probis(results, poc_indexes)
 
 # @cache(lambda cfg: "")
 # def get_early_poc_tm_sims(cfg):
