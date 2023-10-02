@@ -76,7 +76,7 @@ def prepare_lig_pdbqt(cfg, lig_file, center, size):
 
     return out_file, size
 
-TIMEOUT = 60*10
+TIMEOUT = 60*5
 VINA_GNINA_CPUS = 4
 def run_program(cfg, program, split, pocket, row, out_file):
     """ Run either Vina or Gnina on a single ligand. Program
