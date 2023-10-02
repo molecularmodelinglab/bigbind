@@ -1,5 +1,6 @@
 
 import os
+import random
 import subprocess
 import pandas as pd
 import rdkit
@@ -118,6 +119,7 @@ def prepare_docking_inputs(cfg, rec_pdbqts, program):
                 out_file = get_baseline_dir(cfg, program, split, pocket) + f"/{prefix}_{i}.{ext}"
                 ret.append((split, pocket, row, out_file))
 
+    random.shuffle(ret)
     return ret
 
 @task(max_runtime=0.1)
