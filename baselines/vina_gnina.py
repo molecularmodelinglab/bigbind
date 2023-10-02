@@ -96,7 +96,7 @@ def run_program(cfg, program, split, pocket, row, out_file):
 
     print("Docking with:", " ".join(cmd))
     
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = proc.communicate()
     print(out.decode("utf-8"))
     print(err.decode("utf-8"))
@@ -129,14 +129,26 @@ def run_vina(cfg, args):
 
 run_all_vina = iter_task(224, 48, n_cpu=1, mem=128)(run_vina)
 
-def make_vina_workflow(cfg):
+@task(max_runtime=0.1)
+def prepare_gnina_inputs(cfg):
+    return prepare_docking_inputs(cfg, None, "gnina")
+
+def run_gnina(cfg, args):
+    return run_program(cfg, "gnina", *args)
+
+run_all_vina = iter_task(224, 48, n_cpu=1, mem=128)(run_gnina)
+
+def make_vina_gnina_workflow(cfg):
 
     rec_pdbqts = prepare_all_rec_pdbqts()
     vina_inputs = prepare_vina_inputs(rec_pdbqts)
     vina_outputs = run_all_vina(vina_inputs)
 
+    gnina_inputs = prepare_gnina_inputs()
+    gnina_outputs = run_all_vina(gnina_inputs)
+
     return Workflow(cfg, vina_outputs)
 
 if __name__ == "__main__":
     cfg = get_config("local")
-    make_vina_workflow(cfg).run()
+    make_vina_gnina_workflow(cfg).run()

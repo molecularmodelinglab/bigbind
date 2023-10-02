@@ -5,6 +5,7 @@ import asyncio
 
 from utils.cfg_utils import get_config
 from bigbind.bigbind import make_bigbind_workflow
+from baselines.vina_gnina import make_vina_gnina_workflow
 from utils.slurm import submit_slurm_task
 from utils.sync import sync_to
 
@@ -98,7 +99,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = get_config(args.host)
-    workflow = make_bigbind_workflow(cfg)
+    # workflow = make_bigbind_workflow(cfg)
+    workflow = make_vina_gnina_workflow(cfg)
 
     if args.sync:
         sync_to(cfg)
