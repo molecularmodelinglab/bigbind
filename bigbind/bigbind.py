@@ -19,7 +19,7 @@ from traceback import print_exc
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
 from bigbind.bayes_bind import make_all_bayesbind
-from bigbind.knn import compare_probis_and_pocket_tm
+from bigbind.knn import compare_probis_and_pocket_tm, get_optimal_tan_tm_coefs
 from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_lig_rec_edge_prob_ratios_probis, get_pocket_clusters, get_pocket_clusters_probis, get_pocket_clusters_with_tanimoto, get_pocket_clusters_with_tanimoto_probis, get_pocket_indexes, get_pocket_similarity, get_pocket_similarity_probis, plot_prob_ratios, plot_prob_ratios_probis
 from bigbind.probis import convert_inter_results_to_json, convert_intra_results_to_json, create_all_probis_srfs, find_all_probis_distances, find_representative_rec, get_rep_recs
 
@@ -1471,6 +1471,8 @@ def make_bigbind_workflow(cfg):
 
     saved_bayesbind = make_all_bayesbind(split2act_df, lig_smi, lig_sim_mat, poc_clusters)
 
+    tan_tm_coefs = get_optimal_tan_tm_coefs(tan_cutoffs, tm_cutoffs, prob_ratios)
+
     return Workflow(
         cfg,
         # poc_clusters,
@@ -1484,7 +1486,7 @@ def make_bigbind_workflow(cfg):
         saved_bayesbind,
         plotted_prob_ratios_probis,
         tm_vs_probis,
-        splits,
+        tan_tm_coefs
     )
 
 

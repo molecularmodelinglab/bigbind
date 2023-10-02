@@ -46,8 +46,7 @@ class Workflow:
     def run_node(self, cfg, node: WorkNode, force=False):
         """ Run a single node"""
         try:
-            # print(node, node in self.node_cache, node.task.is_finished(cfg))
-
+            
             if node.task.force:
                 force = True
 

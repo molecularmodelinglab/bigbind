@@ -2,6 +2,7 @@
 import os
 import random
 import subprocess
+from traceback import print_exc
 import pandas as pd
 import rdkit
 import numpy as np
@@ -75,10 +76,14 @@ def prepare_lig_pdbqt(cfg, lig_file, center, size):
 
     return out_file, size
 
+TIMEOUT = 60*10
 VINA_GNINA_CPUS = 4
 def run_program(cfg, program, split, pocket, row, out_file):
     """ Run either Vina or Gnina on a single ligand. Program
     is either 'vina' or 'gnina'. """
+
+    if os.path.exists(out_file):
+        return out_file
 
     center = (row.pocket_center_x, row.pocket_center_y, row.pocket_center_z)
     size = (row.pocket_size_x, row.pocket_size_y, row.pocket_size_z)
@@ -98,7 +103,7 @@ def run_program(cfg, program, split, pocket, row, out_file):
 
     print("Docking with:", " ".join(cmd))
     
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=TIMEOUT)
     out, err = proc.communicate()
     print(out.decode("utf-8"))
     print(err.decode("utf-8"))
@@ -128,18 +133,30 @@ def prepare_vina_inputs(cfg, rec_pdbqts):
     return prepare_docking_inputs(cfg, rec_pdbqts, "vina")
 
 def run_vina(cfg, args):
-    return run_program(cfg, "vina", *args)
+    try:
+        return run_program(cfg, "vina", *args)
+    except KeyboardInterrupt:
+        raise
+    except:
+        print_exc()
+        return None
 
-run_all_vina = iter_task(58, 48, n_cpu=1, mem=128, force=True)(run_vina)
+run_all_vina = iter_task(60, 48, n_cpu=1, mem=128, force=True)(run_vina)
 
 @task(max_runtime=0.1)
 def prepare_gnina_inputs(cfg):
     return prepare_docking_inputs(cfg, None, "gnina")
 
 def run_gnina(cfg, args):
-    return run_program(cfg, "gnina", *args)
+    try:
+        return run_program(cfg, "gnina", *args)
+    except KeyboardInterrupt:
+        raise
+    except:
+        print_exc()
+        return None
 
-run_all_gnina = iter_task(58, 48, n_cpu=1, mem=128)(run_gnina)
+run_all_gnina = iter_task(60, 48, n_cpu=1, mem=128)(run_gnina)
 
 def make_vina_gnina_workflow(cfg):
 

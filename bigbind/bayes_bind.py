@@ -122,7 +122,7 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
                 seen.add(poc)
 
 # force this!
-@task(force=True)
+@task(force=False)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
     shutil.rmtree(get_bayesbind_dir(cfg))
 

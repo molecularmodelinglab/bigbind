@@ -21,7 +21,11 @@ def get_optimal_lig_rec_coefs(tan_cutoffs, tm_cutoffs, prob_ratios):
     tan_coef, tm_coef = model.coef_[0]
     return tan_coef, tm_coef
 
-def get_knn_preds(target_df, train_df, lig_smi, lig_sim_mat, poc_sim, tan_cutoffs, tm_cutoffs, prob_ratios, K=1):
+@task(max_runtime=0.05)
+def get_optimal_tan_tm_coefs(cfg, tan_cutoffs, tm_cutoffs, prob_ratios):
+    return get_optimal_lig_rec_coefs(tan_cutoffs, tm_cutoffs, prob_ratios)
+
+def get_knn_preds(target_df, train_df, lig_smi, lig_sim_mat, poc_sim, tan_cutoffs, tm_cutoffs, prob_ratios, K=1, target_pocket=None):
     """ Uses poc sim and lig sim to get predictions for the target_df
     using a (K=1) KNN """
 
@@ -70,7 +74,10 @@ def get_knn_preds(target_df, train_df, lig_smi, lig_sim_mat, poc_sim, tan_cutoff
         train_idxs = lig_idx2train_idx[j]
         # expand to _all_ the edges between the target and train sets
         for targ_idx in targ_idxs:
-            targ_poc = target_df.pocket[targ_idx]
+            if target_pocket is None:
+                targ_poc = target_df.pocket[targ_idx]
+            else:
+                targ_poc = target_pocket
             for train_idx in train_idxs:
                 train_poc = train_df.pocket[train_idx]
                 
