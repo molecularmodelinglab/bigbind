@@ -103,8 +103,8 @@ def run_program(cfg, program, split, pocket, row, out_file):
 
     print("Docking with:", " ".join(cmd))
     
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=TIMEOUT)
-    out, err = proc.communicate()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = proc.communicate(timeout=TIMEOUT)
     print(out.decode("utf-8"))
     print(err.decode("utf-8"))
 
