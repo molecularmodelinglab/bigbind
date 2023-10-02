@@ -15,5 +15,7 @@ networkx
 omegaconf
 meeko
 google-cloud-storage
+matplotlib
+scikit-learn
 # todo:
 # conda install -c conda-forge pdbfixer

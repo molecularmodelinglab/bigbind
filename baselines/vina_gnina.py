@@ -138,7 +138,7 @@ def prepare_gnina_inputs(cfg):
 def run_gnina(cfg, args):
     return run_program(cfg, "gnina", *args)
 
-run_all_gnina = iter_task(224, 48, n_cpu=1, mem=128)(run_gnina)
+run_all_gnina = iter_task(117, 48, n_cpu=1, mem=128)(run_gnina)
 
 def make_vina_gnina_workflow(cfg):
 
