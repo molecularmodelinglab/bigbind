@@ -57,7 +57,7 @@ def prepare_all_rec_pdbqts(cfg):
         print(f"Running: {cmd}")
         subprocess.run(cmd, shell=True, check=True)
 
-def prepare_lig_pdbqt(lig_file, center, size):
+def prepare_lig_pdbqt(cfg, lig_file, center, size):
     """ Prepares a ligand PDBQT file. Returns a tuple
     lig_file, box_size """
 
@@ -85,7 +85,7 @@ def run_program(cfg, program, split, pocket, row, out_file):
 
     if program == "vina":
         rec_file = get_baseline_dir(cfg, "vina", split, pocket) + "/rec.pdbqt"
-        lig_file, size = prepare_lig_pdbqt(lig_file, center, size)
+        lig_file, size = prepare_lig_pdbqt(cfg, lig_file, center, size)
     else:
         rec_file = get_bayesbind_dir(cfg) + f"/{split}/{pocket}/rec.pdb"
 
@@ -129,7 +129,7 @@ def prepare_vina_inputs(cfg, rec_pdbqts):
 def run_vina(cfg, args):
     return run_program(cfg, "vina", *args)
 
-run_all_vina = iter_task(58, 48, n_cpu=1, mem=128)(run_vina)
+run_all_vina = iter_task(58, 48, n_cpu=1, mem=128, force=True)(run_vina)
 
 @task(max_runtime=0.1)
 def prepare_gnina_inputs(cfg):
