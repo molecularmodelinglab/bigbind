@@ -129,7 +129,7 @@ def prepare_vina_inputs(cfg, rec_pdbqts):
 def run_vina(cfg, args):
     return run_program(cfg, "vina", *args)
 
-run_all_vina = iter_task(224, 48, n_cpu=1, mem=128)(run_vina)
+run_all_vina = iter_task(117, 48, n_cpu=1, mem=128)(run_vina)
 
 @task(max_runtime=0.1)
 def prepare_gnina_inputs(cfg):
