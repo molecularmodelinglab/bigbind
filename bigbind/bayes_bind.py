@@ -99,7 +99,9 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
             poc2cluster[poc] = cluster
 
     # the TOP1 pocket is known to be incorrect -- skip it
-    bad_pockets = [ "TOP1_HUMAN_202_765_0" ]
+    # MCL and OPRK have too similar pockets in the train set, that neither TM score
+    # nor ProBis can identify smh
+    bad_pockets = [ "TOP1_HUMAN_202_765_0", "OPRK_HUMAN_55_347_TM_0", "MCL1_HUMAN_171_326_0" ]
 
     # print(split, len(df))
 
@@ -116,13 +118,13 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
                 continue
             
             print(f"Running on {split}/{pocket} {low_clusters=} {tot_clusters=}")
-            make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random=20000)
+            make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random=10000)
 
             for poc in poc2cluster[pocket]:
                 seen.add(poc)
 
 # force this!
-@task(force=False)
+@task(force=True)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
     shutil.rmtree(get_bayesbind_dir(cfg))
 

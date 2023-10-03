@@ -32,12 +32,13 @@ class WorkNode:
         self.args = args
         self.kwargs = kwargs
 
-        for parent in self.get_parents():
-            if parent.task.force:
-                if not self.task.simple:
-                    print(f"Forcing {self.task.name}")
-                self.task.force = True
-                break
+        if not self.task.force:
+            for parent in self.get_parents():
+                if parent.task.force:
+                    if not self.task.simple:
+                        print(f"Forcing {self.task.name}")
+                    self.task.force = True
+                    break
 
     def can_submit(self, cfg):
         """ Returns true if you can submit the task to e.g. slurm.

@@ -405,9 +405,10 @@ def plot_prob_ratios_probis(cfg, tans, tms, prob_ratios):
     fig.savefig(fname)
 
 
-def get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio):
+def get_optimal_tm_cutoff(tms, tans, prob_ratios, cutoff_ratio, tan_cutoff=1.0):
+    mask = tans[:,0] <= tan_cutoff
     cutoff_idx = num_tm - 1
-    for ratio in reversed(prob_ratios.max(axis=0)):
+    for ratio in reversed(prob_ratios[mask].max(axis=0)):
         # print(ratio, cutoff_idx)
         if ratio < cutoff_ratio:
             break
@@ -417,7 +418,7 @@ def get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio):
     cutoff = tms[0, cutoff_idx+1]
     return cutoff
 
-CUTOFF_RATIO = 7.5
+CUTOFF_RATIO = 5.0
 
 # force this!
 @task(num_outputs=2, force=False)
@@ -497,15 +498,17 @@ def get_pocket_clusters_probis(cfg, activities, tms, prob_ratios, poc_sim, poc_i
 
     return cutoff, clusters
 
+TANIMOTO_SPLIT_CUTOFF = 0.7
 @simple_task
-def get_tan_cluster_inputs(cfg, full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
+def get_tan_cluster_inputs(cfg, full_lig_sim_mat, tms, tans, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
     
-    cutoff = get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio)
-    print("Optimal TM cutoff:", cutoff)
+    lo_cutoff = get_optimal_tm_cutoff(tms, tans, prob_ratios, cutoff_ratio)
+    hi_cutoff = get_optimal_tm_cutoff(tms, tans, prob_ratios, cutoff_ratio, tan_cutoff=TANIMOTO_SPLIT_CUTOFF)
+    print("Optimal TM cutoffs:", lo_cutoff, hi_cutoff)
 
     args = []
     for poc in poc_indexes:
-        args.append((poc, poc_sim, cutoff, full_lig_sim_mat, poc_indexes))
+        args.append((poc, poc_sim, lo_cutoff, hi_cutoff, full_lig_sim_mat, poc_indexes))
 
     random.shuffle(args)
 
@@ -516,14 +519,12 @@ def get_tan_cluster_edges(cfg, arg):
     OR their tanimoto similarity is above the tan cutoff and their poc simiilarity is
     above the low cutoff """
 
-    p1, poc_sim, low_cutoff, full_lig_sim_mat, poc_indexes = arg
-
-    high_cutoff = 0.9
-    tan_cutoff = 0.4
-    assert tan_cutoff == 0.4
+    p1, poc_sim, low_cutoff, high_cutoff, full_lig_sim_mat, poc_indexes = arg
+    tan_cutoff = TANIMOTO_SPLIT_CUTOFF
+    cutoff_mask = full_lig_sim_mat.data > tan_cutoff
 
     edges = []
-    p1_mask = np.in1d(full_lig_sim_mat.row, poc_indexes[p1])
+    p1_mask = np.in1d(full_lig_sim_mat.row, poc_indexes[p1]) & cutoff_mask
 
     for p2, score in zip(poc_sim.poc2pocs[p1], poc_sim.poc2scores[p1]):
         if p2 in poc_indexes and score > low_cutoff:
@@ -567,40 +568,38 @@ def postproc_tan_cluster_edges(cfg, edge_results, poc_indexes):
     return clusters
 
 def get_pocket_clusters_with_tanimoto(
-    full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes
+    full_lig_sim_mat, tms, tans, prob_ratios, poc_sim, poc_indexes
 ):
-    inputs = get_tan_cluster_inputs(full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes)
+    inputs = get_tan_cluster_inputs(full_lig_sim_mat, tms, tans, prob_ratios, poc_sim, poc_indexes)
     results = get_all_tan_cluster_edges(inputs)
     return postproc_tan_cluster_edges(results, poc_indexes)
 
 
 @simple_task
-def get_tan_cluster_inputs_probis(cfg, full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
+def get_tan_cluster_inputs_probis(cfg, full_lig_sim_mat, tms, tans, prob_ratios, poc_sim, poc_indexes, cutoff_ratio=CUTOFF_RATIO):
     
-    cutoff = get_optimal_tm_cutoff(tms, prob_ratios, cutoff_ratio)
-    print("Optimal Probis cutoff:", cutoff)
+    lo_cutoff = get_optimal_tm_cutoff(tms, tans, prob_ratios, cutoff_ratio)
+    hi_cutoff = get_optimal_tm_cutoff(tms, tans, prob_ratios, cutoff_ratio, tan_cutoff=TANIMOTO_SPLIT_CUTOFF)
+    print("Optimal ProBis cutoffs:", lo_cutoff, hi_cutoff)
 
     args = []
     for poc in poc_indexes:
-        args.append((poc, poc_sim, cutoff, full_lig_sim_mat, poc_indexes))
+        args.append((poc, poc_sim, lo_cutoff, hi_cutoff, full_lig_sim_mat, poc_indexes))
 
     random.shuffle(args)
 
     return args
-
 def get_tan_cluster_edges_probis(cfg, arg):
     """ Creates an edge between two pockets if their TM score is above the high cutoff
     OR their tanimoto similarity is above the tan cutoff and their poc simiilarity is
     above the low cutoff """
 
-    p1, poc_sim, low_cutoff, full_lig_sim_mat, poc_indexes = arg
-
-    high_cutoff = 3.5
-    tan_cutoff = 0.4
-    assert tan_cutoff == 0.4
+    p1, poc_sim, low_cutoff, high_cutoff, full_lig_sim_mat, poc_indexes = arg
+    tan_cutoff = TANIMOTO_SPLIT_CUTOFF
+    cutoff_mask = full_lig_sim_mat.data > tan_cutoff
 
     edges = []
-    p1_mask = np.in1d(full_lig_sim_mat.row, poc_indexes[p1])
+    p1_mask = np.in1d(full_lig_sim_mat.row, poc_indexes[p1]) & cutoff_mask
 
     for p2, score in zip(poc_sim.poc2pocs[p1], poc_sim.poc2scores[p1]):
         if p2 in poc_indexes and score > low_cutoff:
@@ -613,7 +612,6 @@ def get_tan_cluster_edges_probis(cfg, arg):
                     edges.append((p1, p2))
 
     return edges
-
 # force this!
 get_all_tan_cluster_edges_probis = iter_task(4, 1, force=False)(get_tan_cluster_edges_probis)
 
@@ -644,9 +642,9 @@ def postproc_tan_cluster_edges_probis(cfg, edge_results, poc_indexes):
     return clusters
 
 def get_pocket_clusters_with_tanimoto_probis(
-    full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes
+    full_lig_sim_mat, tms, tans, prob_ratios, poc_sim, poc_indexes
 ):
-    inputs = get_tan_cluster_inputs_probis(full_lig_sim_mat, tms, prob_ratios, poc_sim, poc_indexes)
+    inputs = get_tan_cluster_inputs_probis(full_lig_sim_mat, tms, tans, prob_ratios, poc_sim, poc_indexes)
     results = get_all_tan_cluster_edges_probis(inputs)
     return postproc_tan_cluster_edges_probis(results, poc_indexes)
 

@@ -987,7 +987,8 @@ def get_splits(cfg, activities, clusters, lit_pcba_pockets, pocket_indexes, val_
             if poc in pocket_indexes:
                 pcba_indexes += len(pocket_indexes[poc])
                 cluster_size += len(pocket_indexes[poc])
-        print(len(cluster), cluster_size)
+        # print(cluster)
+        # print(len(cluster), cluster_size)
 
     pcba_frac = pcba_indexes / len(activities)
     test_res = split_fracs["test"] - pcba_frac
@@ -1404,8 +1405,8 @@ def make_bigbind_workflow(cfg):
     tan_cutoffs, tm_cutoffs, prob_ratios = get_lig_rec_edge_prob_ratios(activities, full_lig_sim_mat, poc_sim, pocket_indexes)
     plotted_prob_ratios = plot_prob_ratios(tan_cutoffs, tm_cutoffs, prob_ratios)
 
-    tm_cutoff, poc_clusters = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
-    poc_clusters_tan = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    tm_cutoff, poc_clusters_no_tan = get_pocket_clusters(activities, tm_cutoffs, prob_ratios, poc_sim, pocket_indexes)
+    poc_clusters = get_pocket_clusters_with_tanimoto(full_lig_sim_mat, tm_cutoffs, tan_cutoffs, prob_ratios, poc_sim, pocket_indexes)
 
 
     lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
@@ -1442,8 +1443,8 @@ def make_bigbind_workflow(cfg):
     tan_cutoffs_probis, probis_cutoffs, prob_ratios_probis = get_lig_rec_edge_prob_ratios_probis(activities, full_lig_sim_mat, poc_sim_probis, pocket_indexes)
     plotted_prob_ratios_probis = plot_prob_ratios_probis(tan_cutoffs_probis, probis_cutoffs, prob_ratios_probis)
 
-    probis_cutoff, poc_clusters_probis = get_pocket_clusters_probis(activities, probis_cutoffs, prob_ratios_probis, poc_sim_probis, pocket_indexes)
-    poc_clusters_probis_tan = get_pocket_clusters_with_tanimoto_probis(full_lig_sim_mat, probis_cutoffs, prob_ratios_probis, poc_sim_probis, pocket_indexes)
+    probis_cutoff, poc_clusters_probis_no_tan = get_pocket_clusters_probis(activities, probis_cutoffs, prob_ratios_probis, poc_sim_probis, pocket_indexes)
+    poc_clusters_probis = get_pocket_clusters_with_tanimoto_probis(full_lig_sim_mat, probis_cutoffs, tan_cutoffs, prob_ratios_probis, poc_sim_probis, pocket_indexes)
     
     splits_probis = get_splits_probis(activities, poc_clusters_probis, lit_pcba_pockets, pocket_indexes)
     split2act_df_probis = get_clustered_activities_probis(activities, splits_probis)
@@ -1475,8 +1476,6 @@ def make_bigbind_workflow(cfg):
 
     return Workflow(
         cfg,
-        # poc_clusters,
-        # poc_clusters_probis,
         saved_act_unf,
         plotted_prob_ratios,
         plotted_prob_ratios_probis,
@@ -1484,9 +1483,9 @@ def make_bigbind_workflow(cfg):
         split2sna_df,
         saved_struct,
         saved_bayesbind,
-        plotted_prob_ratios_probis,
-        tm_vs_probis,
-        tan_tm_coefs
+        # plotted_prob_ratios_probis,
+        # tm_vs_probis,
+        # tan_tm_coefs,
     )
 
 
