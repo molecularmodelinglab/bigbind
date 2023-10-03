@@ -128,7 +128,7 @@ def prepare_docking_inputs(cfg, rec_pdbqts, program):
     random.shuffle(ret)
     return ret
 
-@task(max_runtime=0.1, force=True)
+@task(max_runtime=0.1, force=False)
 def prepare_vina_inputs(cfg, rec_pdbqts):
     return prepare_docking_inputs(cfg, rec_pdbqts, "vina")
 
