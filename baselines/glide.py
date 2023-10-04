@@ -16,7 +16,7 @@ def prep_ligs(cfg, out_folder):
             out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".sdf"
             if os.path.exists(out_file): continue
             os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-            cmd = f"ligprep -ismi {smi_file} -osd {out_file} -HOST {HOST}"
+            cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
             print("Running " + cmd)
             subprocess.run(cmd, shell=True)
 
@@ -50,7 +50,7 @@ def make_grids(cfg, out_folder):
         
         gridfile = cur_folder + "/grid.zip"
         in_file = cur_folder + "/grid.in"
-        df = pd.read_csv(folder + "/activities.csv")
+        df = pd.read_csv(folder + "/actives.csv")
         row = df.iloc[0]
 
         # inner box is X times the size of outer box
@@ -82,15 +82,16 @@ def dock_all(cfg, out_folder):
 
         os.chdir(abs_path)
 
-        rec_file = abs_path + "/" + folder + "/rec.pdb"
-        rec_mae = abs_path + "/" + out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        rec_file = folder + "/rec.pdb"
+        rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        
         cur_folder = "/".join(rec_mae.split("/")[:-1])
         os.makedirs(cur_folder, exist_ok=True)
 
         gridfile = cur_folder + "/grid.zip"
 
 
-        for prefix in ["actives"]:
+        for prefix in ["random"]:
             lig_file = cur_folder + "/" + prefix + ".sdf"
             in_file = cur_folder + "/dock_" + prefix + ".in"
             output_folder = cur_folder + "/" + prefix + "_results"
@@ -139,14 +140,18 @@ def glide_to_sdf(cfg, out_folder):
 if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
     
-    out_folder = "baseline_data/glide"
-    subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
+    out_folder = get_parent_baseline_dir(cfg) + "/glide/"
     os.makedirs(out_folder, exist_ok=True)
+    os.chdir(out_folder)
+    
+    # out_folder = "baseline_data/glide"
+    # if not os.path.exists("baseline_data"):
+    #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
-    prep_ligs(cfg, out_folder)
+    # prep_ligs(cfg, out_folder)
     # prep_recs(cfg, out_folder)
     # finalize_rec_prep(cfg, out_folder)
     # make_grids(cfg, out_folder)
-    # dock_all(cfg, out_folder)
+    dock_all(cfg, out_folder)
     # glide_to_sdf(cfg, out_folder)
             
