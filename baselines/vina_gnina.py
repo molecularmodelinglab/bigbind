@@ -101,6 +101,9 @@ def run_program(cfg, program, split, pocket, row, out_file):
         cmd += ["--size_"+ax, str(s)]
     cmd += [ "--out", out_file ]
 
+    if program == "gnina":
+        cmd += [ "--cnn", "crossdock_default2018"]
+
     print("Docking with:", " ".join(cmd))
     
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
