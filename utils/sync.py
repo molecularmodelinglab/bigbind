@@ -4,12 +4,12 @@ import subprocess
 from utils.cfg_utils import get_config
 
 def sync_to(cfg):
-    cmd = f"gsutil -m rsync -r -d gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global {cfg.host.work_dir}/{cfg.run_name}/global"
+    cmd = f"gsutil -m rsync -r gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global {cfg.host.work_dir}/{cfg.run_name}/global"
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 
 def sync_from(cfg):
-    cmd = f"gsutil -m rsync -r -d {cfg.host.work_dir}/{cfg.run_name}/global gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global"
+    cmd = f"gsutil -m rsync -r {cfg.host.work_dir}/{cfg.run_name}/global gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global"
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 

@@ -54,9 +54,8 @@ def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_num=None, sel
     is_active = activities >= act_cutoff
 
     # weigh each active according to the probability of its activity
-    alphas = A_dist.pdf(activities[is_active])
-    # alphas = np.ones_like(alphas)
-    alphas = alphas/alphas.sum()
+    # alphas = A_dist.pdf(activities[is_active])
+    # alphas = alphas/alphas.sum()
 
     P_rand = (rand_preds >= select).sum()/len(rand_preds)
     P_act = ((act_preds >= select) & is_active).sum()/is_active.sum()
@@ -64,15 +63,13 @@ def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_num=None, sel
 
     return P_act/P_rand
 
-def get_all_metrics(cfg, predictions):
+def get_all_metrics(cfg, predictions, act_cutoff=5, N=10000):
     
     poc2activities = {}
     for folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
         pocket = folder.split("/")[-1]
         poc2activities[pocket] = pd.read_csv(folder + "/actives.csv").pchembl_value
     
-    act_cutoff = 5
-    N = 10000
     ret = {}
     all_eefs = []
     for pocket, preds in predictions.items():

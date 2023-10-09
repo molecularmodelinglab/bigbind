@@ -102,7 +102,7 @@ def run_program(cfg, program, split, pocket, row, out_file):
     cmd += [ "--out", out_file ]
 
     if program == "gnina":
-        cmd += [ "--cnn", "crossdock_default2018"]
+        cmd += [ "--cnn", "crossdock_default2018" ]
 
     print("Docking with:", " ".join(cmd))
     

@@ -84,18 +84,23 @@ def dock_all(cfg, out_folder):
 
         rec_file = folder + "/rec.pdb"
         rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-        
+
         cur_folder = "/".join(rec_mae.split("/")[:-1])
         os.makedirs(cur_folder, exist_ok=True)
 
         gridfile = cur_folder + "/grid.zip"
 
 
-        for prefix in ["random"]:
+        for prefix in ["actives", "random"]:
             lig_file = cur_folder + "/" + prefix + ".sdf"
             in_file = cur_folder + "/dock_" + prefix + ".in"
             output_folder = cur_folder + "/" + prefix + "_results"
             os.makedirs(output_folder, exist_ok=True)
+
+            out_file = output_folder + f"/dock_{prefix}.csv"
+            if os.path.exists(out_file):
+                print("Already ran glide for " + out_file)
+                continue
 
             print(f"Writing docking params to {in_file}")
             with open(in_file, "w") as f:
@@ -108,7 +113,7 @@ LIGANDFILE {lig_file}
             os.chdir(output_folder)
             cmd = f"glide {in_file} -HOST {HOST}"
             print(f"Running {cmd} from {os.path.abspath('.')}")
-            subprocess.run(cmd, shell=True)
+            # subprocess.run(cmd, shell=True)
 
 def glide_to_sdf(cfg, out_folder):
 
