@@ -165,12 +165,12 @@ def make_vina_gnina_workflow(cfg):
 
     rec_pdbqts = prepare_all_rec_pdbqts()
     vina_inputs = prepare_vina_inputs(rec_pdbqts)
-    # vina_outputs = run_all_vina(vina_inputs)
+    vina_outputs = run_all_vina(vina_inputs)
 
     gnina_inputs = prepare_gnina_inputs()
     gnina_outputs = run_all_gnina(gnina_inputs)
 
-    return Workflow(cfg, gnina_outputs)
+    return Workflow(cfg, vina_outputs)
 
 if __name__ == "__main__":
     cfg = get_config("local")
