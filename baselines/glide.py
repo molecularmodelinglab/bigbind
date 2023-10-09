@@ -13,10 +13,12 @@ def prep_ligs(cfg, out_folder):
     """ Run ligprep on all the actives and random smi files"""
     for folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
         for smi_file in [ folder + "/actives.smi", folder + "/random.smi" ]:
-            out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".sdf"
+            # out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".sdf"
+            out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".mae"
             if os.path.exists(out_file): continue
             os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-            cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
+            # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
+            cmd = f"ligprep -ismi {smi_file} -omae {out_file}"
             print("Running " + cmd)
             subprocess.run(cmd, shell=True)
 
@@ -80,6 +82,8 @@ def dock_all(cfg, out_folder):
     
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
 
+        split, poc = folder.split("/")[-2:]
+
         os.chdir(abs_path)
 
         rec_file = folder + "/rec.pdb"
@@ -92,7 +96,8 @@ def dock_all(cfg, out_folder):
 
 
         for prefix in ["actives", "random"]:
-            lig_file = cur_folder + "/" + prefix + ".sdf"
+
+            lig_file = cur_folder + "/" + prefix + ".mae"
             in_file = cur_folder + "/dock_" + prefix + ".in"
             output_folder = cur_folder + "/" + prefix + "_results"
             os.makedirs(output_folder, exist_ok=True)
@@ -102,7 +107,7 @@ def dock_all(cfg, out_folder):
                 # print("Already ran glide for " + out_file)
                 continue
 
-            print(f"Writing docking params to {in_file}")
+            # print(f"Writing docking params to {in_file}")
             with open(in_file, "w") as f:
                 f.write(
 f"""GRIDFILE {gridfile}
