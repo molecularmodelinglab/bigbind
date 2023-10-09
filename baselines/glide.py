@@ -99,7 +99,7 @@ def dock_all(cfg, out_folder):
 
             out_file = output_folder + f"/dock_{prefix}.csv"
             if os.path.exists(out_file):
-                print("Already ran glide for " + out_file)
+                # print("Already ran glide for " + out_file)
                 continue
 
             print(f"Writing docking params to {in_file}")
