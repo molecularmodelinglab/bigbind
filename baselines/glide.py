@@ -113,7 +113,7 @@ LIGANDFILE {lig_file}
             os.chdir(output_folder)
             cmd = f"glide {in_file} -HOST {HOST} "
             print(f"Running {cmd} from {os.path.abspath('.')}")
-            # subprocess.run(cmd, shell=True)
+            subprocess.run(cmd, shell=True)
 
 def glide_to_sdf(cfg, out_folder):
 
