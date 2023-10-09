@@ -48,7 +48,7 @@ def get_lig_size(lig, padding=3):
     size = (bounds_max - center + padding)*2
     return tuple(center), tuple(size)
 
-@task()
+@task(force=False)
 def prepare_all_rec_pdbqts(cfg):
     """ Uses OpenBabel to prepare all receptor PDBQT files """
     for split, pocket in get_all_bayesbind_splits_and_pockets(cfg):
@@ -164,13 +164,13 @@ run_all_gnina = iter_task(60, 48, n_cpu=1, mem=128)(run_gnina)
 def make_vina_gnina_workflow(cfg):
 
     rec_pdbqts = prepare_all_rec_pdbqts()
-    # vina_inputs = prepare_vina_inputs(rec_pdbqts)
-    # vina_outputs = run_all_vina(vina_inputs)
+    vina_inputs = prepare_vina_inputs(rec_pdbqts)
+    vina_outputs = run_all_vina(vina_inputs)
 
     gnina_inputs = prepare_gnina_inputs()
     gnina_outputs = run_all_gnina(gnina_inputs)
 
-    return Workflow(cfg, gnina_outputs)
+    return Workflow(cfg, vina_outputs)
 
 if __name__ == "__main__":
     cfg = get_config("local")
