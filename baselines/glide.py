@@ -7,7 +7,7 @@ import subprocess
 
 from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get_parent_baseline_dir
 
-HOST = "\"general:0\""
+HOST = "\"general:6\""
 
 def prep_ligs(cfg, out_folder):
     """ Run ligprep on all the actives and random smi files"""
@@ -111,7 +111,7 @@ LIGANDFILE {lig_file}
                 )
 
             os.chdir(output_folder)
-            cmd = f"glide {in_file} -HOST {HOST}"
+            cmd = f"glide {in_file} -HOST {HOST} "
             print(f"Running {cmd} from {os.path.abspath('.')}")
             # subprocess.run(cmd, shell=True)
 
