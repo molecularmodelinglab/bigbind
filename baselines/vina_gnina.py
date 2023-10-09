@@ -48,7 +48,7 @@ def get_lig_size(lig, padding=3):
     size = (bounds_max - center + padding)*2
     return tuple(center), tuple(size)
 
-@task(force=True)
+@task(force=False)
 def prepare_all_rec_pdbqts(cfg):
     """ Uses OpenBabel to prepare all receptor PDBQT files """
     for split, pocket in get_all_bayesbind_splits_and_pockets(cfg):
