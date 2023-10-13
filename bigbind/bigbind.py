@@ -1106,7 +1106,7 @@ def get_splits_probis(cfg, activities, clusters, lit_pcba_pockets, pocket_indexe
 
 @task(max_runtime=2)
 def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
-    """ Clusters all the ligands for a given pocket with tanimoto cutoff > 0.7
+    """ Clusters all the ligands for a given pocket with tanimoto cutoff > 0.4
     Returns an array of cluster indexes for each ligand  in activities"""
     lig_sim = LigSimilarity(lig_smi, lig_sim_mat)
     ret_clusters = np.zeros(len(activities), dtype=np.int32) - 1
@@ -1327,6 +1327,12 @@ def get_all_sna_dfs_probis(cfg, smiles2clusters, split2df, neg_ratio=1):
 
     return out_split2df
 
+@task(max_runtime=0.1, force=False)
+def remove_potencies_from_act(cfg, activities):
+    ret = activities.query("standard_type != 'Potency'").reset_index(drop=True)
+    print(f"Len before potencies removed: {len(activities)}, len after: {len(ret)}")
+    return ret
+
 def make_bigbind_workflow(cfg):
     sifts_zipped = download_sifts()
     sifts_csv = unzip_sifts(sifts_zipped)
@@ -1412,8 +1418,14 @@ def make_bigbind_workflow(cfg):
     lit_pcba_pockets = get_lit_pcba_pockets(con, lit_pcba_dir, uniprot2pockets)
     splits = get_splits(activities, poc_clusters, lit_pcba_pockets, pocket_indexes)
 
+    # ew -- yes this should go waaayyy earlier but I don't have time to recompute
+    # all the docking results for BayesBind
+
     lig_cluster_idxs = get_lig_clusters(activities, pocket_indexes, lig_smi, lig_sim_mat)
     activities = add_all_clusters_to_act(activities, lig_cluster_idxs, pocket_indexes, poc_clusters)
+
+
+    activities_no_pot = remove_potencies_from_act(activities)
 
     struct_df = create_struct_df(pocket2rfs,
                                  pocket2lfs,
@@ -1424,7 +1436,7 @@ def make_bigbind_workflow(cfg):
                                  pocket_centers,
                                  pocket_sizes)
     
-    split2act_df = save_clustered_activities(activities, splits)
+    split2act_df = save_clustered_activities(activities_no_pot, splits)
     saved_struct = save_clustered_structs(struct_df, splits)
 
     # SNA
@@ -1482,7 +1494,7 @@ def make_bigbind_workflow(cfg):
         split2act_df,
         split2sna_df,
         saved_struct,
-        saved_bayesbind,
+        # saved_bayesbind,
         # plotted_prob_ratios_probis,
         # tm_vs_probis,
         # tan_tm_coefs,

@@ -29,7 +29,7 @@ def get_all_bayesbind_knn_preds(cfg):
 
     return preds
 
-@task(force=False)
+@task(force=True)
 def get_all_bayesbind_knn_preds_probis(cfg):
     
     train_df = pd.read_csv(get_output_dir(cfg) + "/activities_train.csv")

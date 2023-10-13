@@ -122,8 +122,10 @@ class LigSimilarity:
             print("This shouldn't happen...")
             return 0.0
 
-    def get_nx_graph(self, smi_list, tan_cutoff=0.7):
+    def get_nx_graph(self, smi_list, tan_cutoff=0.4):
         """Returns dict mapping smiles to neighbor smiles"""
+        assert tan_cutoff == 0.4
+
         idxs = np.array([self.smi2idx[smi] for smi in smi_list])
         mask = np.logical_and(
             np.in1d(self.tanimoto_mat.row, idxs), np.in1d(self.tanimoto_mat.col, idxs)
@@ -371,20 +373,21 @@ def get_lig_rec_edge_prob_ratios_probis(activities, full_lig_sim_mat, poc_sim, p
 @task(force=False)
 def plot_prob_ratios(cfg, tans, tms, prob_ratios):
 
-    print("tans", tans)
-    print("tms", tms)
-    print("prob_ratios", prob_ratios)
+    # print("tans", tans)
+    # print("tms", tms)
+    # print("prob_ratios", prob_ratios)
 
     fig, ax = plt.subplots()
     contour = ax.contourf(tans, tms, prob_ratios)
     fig.colorbar(contour, ax=ax)
-    ax.set_title("P(L,R)/(P(L)*P(R))")
-    ax.set_xlabel("L (Tanimoto similarity)")
-    ax.set_ylabel("R (Pocket TM score)")
+    ax.set_title("$\\frac{P(L,R)}{P(L)P(R)}$")
+    ax.set_xlabel("$L$ (Tanimoto similarity)")
+    ax.set_ylabel("$R$ (Pocket TM score)")
 
-    fname = os.path.join(get_figure_dir(cfg), "prob_ratios.png")
+    # fname = "outputs/prob_ratios.pdf"
+    fname = os.path.join(get_figure_dir(cfg), "prob_ratios.pdf")
     print("Saving figure to", fname)
-    fig.savefig(fname)
+    fig.savefig(fname, dpi=1000)
 
 @task(force=False)
 def plot_prob_ratios_probis(cfg, tans, tms, prob_ratios):
@@ -400,7 +403,7 @@ def plot_prob_ratios_probis(cfg, tans, tms, prob_ratios):
     ax.set_xlabel("L (Tanimoto similarity)")
     ax.set_ylabel("R (Probis score)")
 
-    fname = os.path.join(get_figure_dir(cfg), "prob_ratios_probis.png")
+    fname = os.path.join(get_figure_dir(cfg), "prob_ratios_probis.pdf")
     print("Saving figure to", fname)
     fig.savefig(fname)
 
