@@ -21,7 +21,7 @@ def run_full_gnina(cfg, args):
     #     return out_file
 
     center = (cx, cy, cz)
-    size = sx, sy, sz)
+    size = (sx, sy, sz)
     lig_file = get_output_dir(cfg) + "/" + lf
 
     rec_file = get_output_dir(cfg) + f"/{rf.replace('.pdb', '_nofix.pdb')}"
