@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import asyncio
+from baselines.dock_all import make_dock_workflow
 
 from utils.cfg_utils import get_config
 from bigbind.bigbind import make_bigbind_workflow
