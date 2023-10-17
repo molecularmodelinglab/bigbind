@@ -13,18 +13,18 @@ def run_full_gnina(cfg, args):
     """ Run either Vina or Gnina on a single ligand. Program
     is either 'vina' or 'gnina'. """
 
-    index, split, row = args
+    index, split, cx, cy, cz, sx, sy, sz, lf, rf = args
 
     out_file = get_docked_dir(cfg, "gnina", split) + f"/{index}.sdf"
 
     # if os.path.exists(out_file):
     #     return out_file
 
-    center = (row.pocket_center_x, row.pocket_center_y, row.pocket_center_z)
-    size = (row.pocket_size_x, row.pocket_size_y, row.pocket_size_z)
-    lig_file = get_output_dir(cfg) + "/" + row.lig_file
+    center = (cx, cy, cz)
+    size = sx, sy, sz)
+    lig_file = get_output_dir(cfg) + "/" + lf
 
-    rec_file = get_output_dir(cfg) + f"/{row.ex_rec_file.replace('.pdb', '_nofix.pdb')}"
+    rec_file = get_output_dir(cfg) + f"/{rf.replace('.pdb', '_nofix.pdb')}"
 
     cmd = [ "gnina", "--receptor", rec_file, "--ligand", lig_file, "--cpu", str(VINA_GNINA_CPUS) ]
     for c, s, ax in zip(center, size, ["x", "y", "z"]):
@@ -60,12 +60,12 @@ def get_single_rec_dfs(cfg):
         ret[split] = df
     return ret
 
-@task(max_runtime=0.1, force=False)
+@task(max_runtime=0.1, force=True)
 def prepare_full_docking_inputs(cfg, split_dfs):
     ret = []
     for split, df in split_dfs.items():
         for i, row in df.iterrows():
-            ret.append((i, split, row))
+            ret.append((i, split, row.pocket_center_x, row.pocket_center_y, row.pocket_center_z, row.pocket_size_x, row.pocket_size_y, row.pocket_size_z, row.lig_file, row.ex_rec_file))
 
     random.shuffle(ret)
     return ret
