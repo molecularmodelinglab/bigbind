@@ -15,7 +15,7 @@ def run_full_gnina(cfg, args):
 
     index, split, row = args
 
-    out_file = get_docked_dir(cfg, "gnina", split) + f"{index}.sdf"
+    out_file = get_docked_dir(cfg, "gnina", split) + f"/{index}.sdf"
 
     # if os.path.exists(out_file):
     #     return out_file
@@ -24,7 +24,7 @@ def run_full_gnina(cfg, args):
     size = (row.pocket_size_x, row.pocket_size_y, row.pocket_size_z)
     lig_file = get_output_dir(cfg) + "/" + row.lig_file
 
-    rec_file = get_output_dir(cfg) + f"/{row.ex_rec_file}.pdb"
+    rec_file = get_output_dir(cfg) + f"/{row.ex_rec_file.replace('.pdb', '_nofix.pdb')}"
 
     cmd = [ "gnina", "--receptor", rec_file, "--ligand", lig_file, "--cpu", str(VINA_GNINA_CPUS) ]
     for c, s, ax in zip(center, size, ["x", "y", "z"]):
@@ -60,7 +60,7 @@ def get_single_rec_dfs(cfg):
         ret[split] = df
     return ret
 
-@task(max_runtime=0.1, force=True)
+@task(max_runtime=0.1, force=False)
 def prepare_full_docking_inputs(cfg, split_dfs):
     ret = []
     for split, df in split_dfs.items():
