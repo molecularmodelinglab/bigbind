@@ -78,7 +78,7 @@ def prepare_lig_pdbqt(cfg, lig_file, center, size):
 
 TIMEOUT = 60*5
 VINA_GNINA_CPUS = 4
-def run_program(cfg, program, split, pocket, row, out_file):
+def run_program(cfg, program, split, pocket, row, out_file, cpus=VINA_GNINA_CPUS):
     """ Run either Vina or Gnina on a single ligand. Program
     is either 'vina' or 'gnina'. """
 
@@ -95,7 +95,7 @@ def run_program(cfg, program, split, pocket, row, out_file):
     else:
         rec_file = get_bayesbind_dir(cfg) + f"/{split}/{pocket}/rec.pdb"
 
-    cmd = [ program, "--receptor", rec_file, "--ligand", lig_file, "--cpu", str(VINA_GNINA_CPUS) ]
+    cmd = [ program, "--receptor", rec_file, "--ligand", lig_file, "--cpu", str(cpus) ]
     for c, s, ax in zip(center, size, ["x", "y", "z"]):
         cmd += ["--center_"+ax, str(c)]
         cmd += ["--size_"+ax, str(s)]
