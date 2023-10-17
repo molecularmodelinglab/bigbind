@@ -1,6 +1,7 @@
 
 import random
 import subprocess
+from traceback import print_exc
 import pandas as pd
 from tqdm import tqdm
 from utils.cfg_utils import get_config, get_docked_dir, get_output_dir
@@ -8,39 +9,47 @@ from utils.task import iter_task, task
 from utils.workflow import Workflow
 
 TIMEOUT = 60*5
-VINA_GNINA_CPUS = 2
+VINA_GNINA_CPUS = 1
 def run_full_gnina(cfg, args):
     """ Run either Vina or Gnina on a single ligand. Program
     is either 'vina' or 'gnina'. """
 
-    index, split, cx, cy, cz, sx, sy, sz, lf, rf = args
+    try:
 
-    out_file = get_docked_dir(cfg, "gnina", split) + f"/{index}.sdf"
+        index, split, cx, cy, cz, sx, sy, sz, lf, rf = args
 
-    # if os.path.exists(out_file):
-    #     return out_file
+        out_file = get_docked_dir(cfg, "gnina", split) + f"/{index}.sdf"
 
-    center = (cx, cy, cz)
-    size = (sx, sy, sz)
-    lig_file = get_output_dir(cfg) + "/" + lf
+        # if os.path.exists(out_file):
+        #     return out_file
 
-    rec_file = get_output_dir(cfg) + f"/{rf.replace('.pdb', '_nofix.pdb')}"
+        center = (cx, cy, cz)
+        size = (sx, sy, sz)
+        lig_file = get_output_dir(cfg) + "/" + lf
 
-    cmd = [ "gnina", "--receptor", rec_file, "--ligand", lig_file, "--cpu", str(VINA_GNINA_CPUS) ]
-    for c, s, ax in zip(center, size, ["x", "y", "z"]):
-        cmd += ["--center_"+ax, str(c)]
-        cmd += ["--size_"+ax, str(s)]
-    cmd += [ "--out", out_file ]
-    cmd += [ "--cnn", "crossdock_default2018" ]
+        rec_file = get_output_dir(cfg) + f"/{rf.replace('.pdb', '_nofix.pdb')}"
 
-    print("Docking with:", " ".join(cmd))
+        cmd = [ "gnina", "--receptor", rec_file, "--ligand", lig_file, "--cpu", str(VINA_GNINA_CPUS) ]
+        for c, s, ax in zip(center, size, ["x", "y", "z"]):
+            cmd += ["--center_"+ax, str(c)]
+            cmd += ["--size_"+ax, str(s)]
+        cmd += [ "--out", out_file ]
+        cmd += [ "--cnn", "crossdock_default2018" ]
+
+        print("Docking with:", " ".join(cmd))
+        
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = proc.communicate(timeout=TIMEOUT)
+        print(out.decode("utf-8"))
+        print(err.decode("utf-8"))
+
+        return out_file
     
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate(timeout=TIMEOUT)
-    print(out.decode("utf-8"))
-    print(err.decode("utf-8"))
-
-    return out_file
+    except KeyboardInterrupt:
+        raise
+    except:
+        print_exc()
+        return None
 
 @task(max_runtime=0.1, force=False)
 def get_single_rec_dfs(cfg):
@@ -70,7 +79,7 @@ def prepare_full_docking_inputs(cfg, split_dfs):
     random.shuffle(ret)
     return ret
 
-run_all_gnina_full = iter_task(120, 480, n_cpu=1, mem=128)(run_full_gnina)
+run_all_gnina_full = iter_task(240, 480, n_cpu=1, mem=128)(run_full_gnina)
 
 def make_dock_workflow(cfg):
     split_dfs = get_single_rec_dfs()
