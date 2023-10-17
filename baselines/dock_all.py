@@ -8,7 +8,7 @@ from utils.cfg_utils import get_config, get_docked_dir, get_output_dir
 from utils.task import iter_task, task
 from utils.workflow import Workflow
 
-TIMEOUT = 60*5
+TIMEOUT = 60*10
 VINA_GNINA_CPUS = 1
 def run_full_gnina(cfg, args):
     """ Run either Vina or Gnina on a single ligand. Program
@@ -79,7 +79,7 @@ def prepare_full_docking_inputs(cfg, split_dfs):
     random.shuffle(ret)
     return ret
 
-run_all_gnina_full = iter_task(240, 480, n_cpu=1, mem=128)(run_full_gnina)
+run_all_gnina_full = iter_task(600, 600*24*10, n_cpu=1, mem=4)(run_full_gnina)
 
 def make_dock_workflow(cfg):
     split_dfs = get_single_rec_dfs()
