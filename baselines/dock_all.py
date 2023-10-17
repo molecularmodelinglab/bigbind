@@ -1,6 +1,7 @@
 
 import random
 import subprocess
+import sys
 from traceback import print_exc
 import pandas as pd
 from tqdm import tqdm
@@ -88,5 +89,5 @@ def make_dock_workflow(cfg):
     return Workflow(cfg, docked)
 
 if __name__ == "__main__":
-    cfg = get_config("local")
+    cfg = get_config(sys.argv[1])
     make_dock_workflow(cfg).run()
