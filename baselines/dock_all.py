@@ -8,7 +8,7 @@ from utils.task import iter_task, task
 from utils.workflow import Workflow
 
 TIMEOUT = 60*5
-VINA_GNINA_CPUS = 8
+VINA_GNINA_CPUS = 4
 def run_full_gnina(cfg, args):
     """ Run either Vina or Gnina on a single ligand. Program
     is either 'vina' or 'gnina'. """
