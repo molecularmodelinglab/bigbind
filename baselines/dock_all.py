@@ -60,7 +60,7 @@ def get_single_rec_dfs(cfg):
         ret[split] = df
     return ret
 
-@task(max_runtime=0.1, force=True)
+@task(max_runtime=0.1, force=False)
 def prepare_full_docking_inputs(cfg, split_dfs):
     ret = []
     for split, df in split_dfs.items():
@@ -70,7 +70,7 @@ def prepare_full_docking_inputs(cfg, split_dfs):
     random.shuffle(ret)
     return ret
 
-run_all_gnina_full = iter_task(30, 480, n_cpu=1, mem=128)(run_full_gnina)
+run_all_gnina_full = iter_task(60, 480, n_cpu=1, mem=128)(run_full_gnina)
 
 def make_dock_workflow(cfg):
     split_dfs = get_single_rec_dfs()
