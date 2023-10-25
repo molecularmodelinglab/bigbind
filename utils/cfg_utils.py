@@ -29,6 +29,11 @@ def get_docked_dir(cfg, program_name, split):
     os.makedirs(ret, exist_ok=True)
     return ret
 
+def get_analysis_dir(cfg):
+    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "analysis")
+    os.makedirs(ret, exist_ok=True)
+    return ret
+
 def get_config(host_name):
     cfg = OmegaConf.load("configs/cfg.yaml")
     hosts = OmegaConf.load("configs/hosts.yaml")
