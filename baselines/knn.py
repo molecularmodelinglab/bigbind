@@ -73,9 +73,28 @@ def get_all_bigbind_knn_preds(cfg):
 
     return preds
 
+@task(force=False)
+def get_all_bigbind_knn_preds_sna(cfg):
+    
+    train_df = pd.read_csv(get_output_dir(cfg) + "/activities_train.csv")
+    
+    workflow = make_bigbind_workflow(cfg)
+    lig_sim_mat = workflow.run_node_from_name(cfg, "get_tanimoto_matrix")
+    lig_smi, _ = workflow.run_node_from_name(cfg, "get_morgan_fps_parallel")
+    poc_sim = workflow.run_node_from_name(cfg, "get_pocket_similarity")
+    tan_cutoffs, tm_cutoffs, prob_ratios = workflow.run_node_from_name(cfg, "postproc_prob_ratios")
+
+    preds = {}
+    for split in ["val", "test"]:
+        df = pd.read_csv(get_output_dir(cfg) + f"/activities_sna_1_{split}.csv")
+        preds[split] = get_knn_preds(df, train_df, lig_smi, lig_sim_mat, poc_sim, tan_cutoffs, tm_cutoffs, prob_ratios)
+
+    return preds
+
 def make_knn_bigbind_workflow(cfg):
     preds = get_all_bigbind_knn_preds()
-    return Workflow(cfg, preds)
+    sna_preds = get_all_bigbind_knn_preds_sna()
+    return Workflow(cfg, preds, sna_preds)
 
 
 if __name__ == "__main__":
@@ -91,10 +110,18 @@ if __name__ == "__main__":
 
     print("Calculating KNN preds for BigBind val and test")
     workflow = make_knn_bigbind_workflow(cfg)
-    knn_preds = workflow.run()[0]
+    knn_preds, sna_preds = workflow.run()
+
     for split, preds in knn_preds.items():
         out_file = get_analysis_dir(cfg) + f"/knn_preds_{split}.txt"
         print(f"Writing KNN preds for {split} to {out_file}")
+        with open(out_file, "w") as f:
+            for p in preds:
+                f.write(str(p) + "\n")
+
+    for split, preds in sna_preds.items():
+        out_file = get_analysis_dir(cfg) + f"/knn_preds_sna_1_{split}.txt"
+        print(f"Writing KNN preds for {split} (SNA) to {out_file}")
         with open(out_file, "w") as f:
             for p in preds:
                 f.write(str(p) + "\n")
