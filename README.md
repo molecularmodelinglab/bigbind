@@ -22,7 +22,7 @@ BidBindV1.5
     └── {pocket_name}.csv
 ```
 
-There's a bunch of pocket folders with fancy names like `FABF_BACSU_1_413_0`. Within each folder there's a bunch of aligned pdb files. The `*_rec.pdb` files are the full receptor, and the `*_rec_pocket.pdb` files are just the pocket residues (residues within 5 Å of any crystallized ligand). Each crystallized ligand also has its own sdf file. In the paper, the whole receptor files and ligand files are never used, but they are nonetheless present for posterity.
+There's a bunch of pocket folders with fancy names like `FABF_BACSU_1_413_0`. Within each folder, there's a bunch of aligned pdb files. The `*_rec.pdb` files are the full receptor, and the `*_rec_pocket.pdb` files are just the pocket residues (residues within 5 Å of any crystallized ligand). Each crystallized ligand also has its own sdf file. In the paper, the whole receptor files and ligand files are never used, but they are nonetheless present for posterity.
 
 The main meat of the dataset is in the `activities_*.csv` files. The non-SNA activities csvs contain all the (filtered) ChEMBL activities, and have the following columns:
 
