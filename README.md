@@ -84,6 +84,7 @@ BayesBindV1
         ├── actives.csv
         ├── random.smi
         └── random.csv
+``````
 
 For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have seperate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
 
