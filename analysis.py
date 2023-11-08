@@ -1,3 +1,5 @@
+import os
+import pandas as pd
 import yaml
 import random
 import json
@@ -14,11 +16,10 @@ from rdkit import DataStructs
 import matplotlib.pyplot as plt
 
 from collections import defaultdict
-from cache import cache, item_cache
-from probis import *
-from run import *
+from utils.cache import cache
+from utils.cfg_utils import get_config, get_output_dir
 
-@item_cache
+# @item_cache
 def get_protein_family(cfg, uniprot):
     url = f'https://rest.uniprot.org/uniprotkb/search?query=accession:{uniprot}'
     results = requests.get(url).text
@@ -36,22 +37,21 @@ def get_protein_family(cfg, uniprot):
                 ret = re_res.groups(0)[0]
     return ret if ret is not None else "other"
 
-@cache
-def get_uniprot_to_family(cfg):
-    uniprots = set(get_crossdocked_uniprots(cfg).SP_PRIMARY)
+@cache(lambda cfg, df: "")
+def get_uniprot_to_family(cfg, df):
+    uniprots = set(df.uniprot.unique())
     uniprot2family = {}
     for uniprot in tqdm(uniprots):
         uniprot2family[uniprot] = get_protein_family(cfg, uniprot)
     return uniprot2family
 
-@cache
-def get_family_to_num(cfg):
-    activities = pd.read_csv(cfg["bigbind_folder"] + "/activities_all.csv")
-    uniprot2family  = get_uniprot_to_family(cfg)
+@cache(lambda cfg, df: "")
+def get_family_to_num(cfg, df):
+    uniprot2family  = get_uniprot_to_family(cfg, df)
     family2num = defaultdict(int)
     for uniprot in tqdm(uniprot2family.keys()):
         fam = uniprot2family[uniprot]
-        family2num[uniprot2family[uniprot]] += sum(activities.uniprot == uniprot)
+        family2num[uniprot2family[uniprot]] += sum(df.uniprot == uniprot)
     return family2num
 
 def get_class_to_num(cfg, fam2num):
@@ -69,10 +69,11 @@ def get_class_to_num(cfg, fam2num):
     return class2num
 
 def analysis(cfg):
-    fam2num = get_family_to_num(cfg)
-    class2num = get_class_to_num(cfg, fam2num)
 
-    df = pd.read_csv(cfg["bigbind_folder"] + "/activities_all.csv")
+    df = pd.read_csv(get_output_dir(cfg) + "/activities_all.csv")
+
+    fam2num = get_family_to_num(cfg, df)
+    class2num = get_class_to_num(cfg, fam2num)
 
     comp_targets = defaultdict(int)
     for smiles in tqdm(df.lig_smiles):
@@ -137,6 +138,5 @@ def analysis(cfg):
     fig.savefig(out_file, dpi=300)
 
 if __name__ == "__main__":
-    with open("cfg.yaml", "r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = get_config("local")
     analysis(cfg)

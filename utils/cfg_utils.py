@@ -11,6 +11,11 @@ def get_bayesbind_dir(cfg):
     os.makedirs(ret, exist_ok=True)
     return ret
 
+def get_final_bayesbind_dir(cfg):
+    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "BayesBindV1")
+    os.makedirs(ret, exist_ok=True)
+    return ret
+
 def get_figure_dir(cfg):
     ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "figures")
     os.makedirs(ret, exist_ok=True)

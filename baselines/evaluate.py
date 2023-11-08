@@ -231,7 +231,8 @@ def eval_results(cfg):
             high = row[f"Median EEF_max_high ({split})"]
             low = row[f"Median EEF_max_low ({split})"]
 
-            ef_10_targs = (all_results.query("Model == @row.Model and Target in @split_targs[@split]").EEF_max > 10).sum()
+            targets = split_targs[split]
+            ef_10_targs = (all_results.query("Model == @row.Model and Target in @targets").EEF_max > 10).sum()
 
             # plus_err = row["Median EEF_max_high"] - row["Median EEF_max"]
             # minus_err = row["Median EEF_max"] - row["Median EEF_max_low"]
@@ -257,15 +258,15 @@ def eval_results(cfg):
         err = np.abs(err)
 
         frac_str = {
-            0.1: "10",
-            0.01: "1",
-            0.001: "0.1",
-            0.0001: "0.01",
+            0.1: "10\%",
+            0.01: "1\%",
+            0.001: "0.1\%",
+            0.0001: "0.01\%",
             "max": "max",
         }[frac]
 
         fig, ax = plt.subplots(figsize=(8,1.75))
-        p_eef.plot(kind='bar',yerr=err,ax=ax, capsize=2, rot=0, ylabel=f"$\\mathregular{{EEF}}_\\mathregular{{{frac_str}\%}}$")
+        p_eef.plot(kind='bar',yerr=err,ax=ax, capsize=2, rot=0, ylabel=f"$\\mathregular{{EEF}}_\\mathregular{{{frac_str}}}$")
 
         y_max = p_high.max().max()*1.05
 
@@ -301,15 +302,15 @@ def eval_results(cfg):
         err = np.abs(err)
 
         frac_str = {
-            0.1: "10",
-            0.01: "1",
-            0.001: "0.1",
-            0.0001: "0.01",
+            0.1: "10\%",
+            0.01: "1\%",
+            0.001: "0.1\%",
+            0.0001: "0.01\%",
             "max": "max",
         }[frac]
 
         # fig, ax = plt.subplots(figsize=(8,1.75))
-        p_eef.plot(kind='bar',yerr=err,ax=ax, capsize=2, rot=0, ylabel=f"$\\mathregular{{EEF}}_\\mathregular{{{frac_str}\%}}$", legend=last, xlabel="" if not last else "Target", xticks=[] if not last else None)
+        p_eef.plot(kind='bar',yerr=err,ax=ax, capsize=2, rot=0, ylabel=f"$\\mathregular{{EEF}}_\\mathregular{{{frac_str}}}$", legend=last, xlabel="" if not last else "Target", xticks=[] if not last else None)
 
         y_max = p_high.max().max()*1.05
 

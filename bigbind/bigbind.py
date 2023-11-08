@@ -768,7 +768,63 @@ def get_all_pocket_bounds(cfg, pocket2ligs, ligfile2lig, padding=4):
 #     return ret
 
 
-def get_single_pqr_file(cfg, pdb_file):
+# def get_single_pqr_file(cfg, pdb_file):
+#     pdb_file_full = get_output_dir(cfg) + "/" + pdb_file
+#     out_filename = get_output_dir(cfg) + "/" + pdb_file.replace("_nofix.pdb", ".pdb")
+
+#     # if os.path.exists(out_filename):
+#     #     return "/".join(out_filename.split("/")[-2:])
+
+#     # old_name = "/home/boris/Data/BigBindScratch/test/global/output/" + pdb_file.replace("_nofix.pdb", ".pqr")
+#     # if os.path.exists(old_name):
+#     #     shutil.copyfile(old_name, out_filename)
+#     #     return out_filename
+
+#     cmd = f"pdb2pqr --titration-state-method propka -q {pdb_file_full} {out_filename}"
+#     # print(f"Running {cmd}")
+#     try:
+#         subprocess.run(
+#             cmd,
+#             shell=True,
+#             check=True,
+#             stdout=subprocess.DEVNULL,
+#             stderr=subprocess.DEVNULL,
+#         )
+#     except subprocess.CalledProcessError:
+#         return None
+#     return "/".join(out_filename.split("/")[-2:])
+
+
+# compute_pqr_files = iter_task(1, 16, n_cpu=8)(get_single_pqr_file)
+
+
+# @simple_task
+# def preproc_pdb2pqr(cfg, pocket2rfs):
+#     ret = []
+#     for poc, rfs in pocket2rfs.items():
+#         ret += rfs
+#     return ret
+
+
+# @simple_task
+# def postproc_pdb2pqr(cfg, pocket2rfs, pqr_files):
+#     ret = defaultdict(set)
+#     idx = 0
+#     for poc, rfs in pocket2rfs.items():
+#         for rf in rfs:
+#             fixed_rf = pqr_files[idx]
+#             idx += 1
+#             if fixed_rf is not None:
+#                 ret[poc].add(fixed_rf)
+#     return ret
+
+
+# def fix_all_recfiles(pocket2rfs):
+#     inputs = preproc_pdb2pqr(pocket2rfs)
+#     outputs = compute_pqr_files(inputs)
+#     return postproc_pdb2pqr(pocket2rfs, outputs)
+
+def fix_single_pdb_file(cfg, pdb_file):
     pdb_file_full = get_output_dir(cfg) + "/" + pdb_file
     out_filename = get_output_dir(cfg) + "/" + pdb_file.replace("_nofix.pdb", ".pdb")
 
@@ -780,7 +836,7 @@ def get_single_pqr_file(cfg, pdb_file):
     #     shutil.copyfile(old_name, out_filename)
     #     return out_filename
 
-    cmd = f"pdb2pqr --titration-state-method propka -q {pdb_file_full} {out_filename}"
+    cmd = f"pdbfixer {pdb_file_full} --output {out_filename}  --add-atoms=heavy --add-residues"
     # print(f"Running {cmd}")
     try:
         subprocess.run(
@@ -795,11 +851,11 @@ def get_single_pqr_file(cfg, pdb_file):
     return "/".join(out_filename.split("/")[-2:])
 
 
-compute_pqr_files = iter_task(1, 16, n_cpu=8)(get_single_pqr_file)
+fix_pdb_files = iter_task(1, 16, n_cpu=8)(fix_single_pdb_file)
 
 
 @simple_task
-def preproc_pdb2pqr(cfg, pocket2rfs):
+def preproc_fix_pdb(cfg, pocket2rfs):
     ret = []
     for poc, rfs in pocket2rfs.items():
         ret += rfs
@@ -807,22 +863,21 @@ def preproc_pdb2pqr(cfg, pocket2rfs):
 
 
 @simple_task
-def postproc_pdb2pqr(cfg, pocket2rfs, pqr_files):
+def postproc_fix_pdb(cfg, pocket2rfs, pdb_files):
     ret = defaultdict(set)
     idx = 0
     for poc, rfs in pocket2rfs.items():
         for rf in rfs:
-            fixed_rf = pqr_files[idx]
+            fixed_rf = pdb_files[idx]
             idx += 1
             if fixed_rf is not None:
                 ret[poc].add(fixed_rf)
     return ret
 
-
 def fix_all_recfiles(pocket2rfs):
-    inputs = preproc_pdb2pqr(pocket2rfs)
-    outputs = compute_pqr_files(inputs)
-    return postproc_pdb2pqr(pocket2rfs, outputs)
+    inputs = preproc_fix_pdb(pocket2rfs)
+    outputs = fix_pdb_files(inputs)
+    return postproc_fix_pdb(pocket2rfs, outputs)
 
 
 max_pocket_size = 42
@@ -1382,6 +1437,11 @@ def make_bigbind_workflow(cfg):
         cd_dir, pocket2uniprots, pocket2rfs_nofix, pocket2lfs, ligfile2lig
     )
 
+    # pocket2rfs_nofix = defaultdict(list)
+    # for rf in glob(get_output_dir(cfg) + "/*/*_nofix.pdb"):
+    #     pocket = rf.split("/")[-2]
+    #     pocket2rfs_nofix[pocket].append("/".join(rf.split("/")[-2:]))
+
     pocket2rfs = fix_all_recfiles(pocket2rfs_nofix)
 
     rf2pocketfile, rf2res_num = save_all_pockets(pocket2rfs, pocket2lfs, ligfile2lig)
@@ -1488,16 +1548,17 @@ def make_bigbind_workflow(cfg):
 
     return Workflow(
         cfg,
+        rf2pocketfile,
         saved_act_unf,
         plotted_prob_ratios,
         plotted_prob_ratios_probis,
         split2act_df,
         split2sna_df,
         saved_struct,
-        # saved_bayesbind,
-        # plotted_prob_ratios_probis,
-        # tm_vs_probis,
-        # tan_tm_coefs,
+        saved_bayesbind,
+        plotted_prob_ratios_probis,
+        tm_vs_probis,
+        tan_tm_coefs,
     )
 
 

@@ -1,13 +1,13 @@
-# The BigBind Dataset
+# The BigBind Dataset and BayesBind Benchmark
 
-Here lies the code for generating the BigBind Dataset. I've also documented the dataset contents here.
+Here lies the code for generating the BigBind Dataset and BayesBind virtual screening benchmark. Download the latest BigBind Dataset (V1.5) [here](https://storage.googleapis.com/plantain_data/BigBindV1.5.tar.gz) and the latest BayesBind benchmark (V1.0) [here](https://storage.googleapis.com/plantain_data/BayesBindV1.tar.gz).
 
-## Dataset contents
+## BigBind contents
 
-If you download the dataset [here](https://bigbind.mml.unc.edu/BigBindV1.tar.bz2) and extract it, you'll find the following directory structure:
+The BigBind dataset has the following directory structure:
 
 ```
-BidBindV1
+BidBindV1.5
 ├── {pocket_name}/
 │   ├── {rec_pdb_id}_rec.pdb
 │   ├── {rec_pdb_id}_rec_pocket.pdb
@@ -37,55 +37,64 @@ The main meat of the dataset is in the `activities_*.csv` files. The non-SNA act
 | pchembl_value    | ChEMBL-provided log-normalized activity value. Defined at -log_10(activity in nM) |
 | active           | whether of not the pchembl value is greater than our activity cutoff (10 μM) |
 | uniprot          | Uniprot accession of the receptor |
-| pocket           | Receptor pocket folder. We assume the ligand can bind to any of the aligned recptors in the folder |
+| pocket           | Receptor pocket folder. We assume the ligand can bind to any of the aligned receptors in the folder |
 | ex_rec_file      | a randomly selected full receptor from the pocket folder |
 | ex_rec_pdb       | the pdb id of that randomly selected receptor |
 | ex_rec_pocket_file | the pdb file with just the pocket residues for the selected receptor |
 | num_pocket_residues | number of residues in the example pocket file |
 | pocket_center_{x,y,z} | center of the example pocket bounding box |
 | pocket_size_{x,y,z}   | sizes of the example pocket bounding box |
+| lig_cluster           | Ligand Tanimoto cluster ID (0.4 cutoff) for a particular pocket. Cluster IDs are not globally unique; they are only unique within a pocket  |
+| rec_cluster           | Receptor pocket cluster (based on pocket-TM-score) | 
 
-The SNA activities csvs (`activities_sna_1_*.csv`) have the same structure, but don't have any of the specific activity-related values (e.g. `pchembl_value`). Instead all they have is the boolean `active` column.
-
-The `*_screens` folders contain the virtual screening benchmarks described in the paper. There is a seperate csv for each pocket, structured exactly like the SNA csv files.
+The SNA activities csvs (`activities_sna_1_*.csv`) have the same structure, but are augmented with putative inactive compounds with no labelled activity.
 
 There are also `structures_*.csv` files describing the 3d crystal structures of ligands if you so desire. This data isn't used in the paper, but you might find it useful. It's really just a way to access the CrossDocked data if you don't care about the docked poses. The structure of the structues file is as follows:
 
 | Column           | Description                                                    |
 | :---             |    :----                                                       |
-| lig_smiles       | same as in activities                                   |
-| lig_file         | filename of the ligand sdf in its crystal 3D pose |
-| lig_pdb          | pdb id of the crystal structure the ligand came from |
+| pdb              | pdb id of the crystal structure the ligand came from |
 | pocket           | same as in activities                                   |
-| ex_rec_*         | same as in activities. To support cross-docking structure prediction, we assert ex_rec_pdb != lig_pdb |
+| lig_smiles       | same as in activities                                   |
+| lig_crystal_file | filename of the ligand sdf in its crystal 3D pose |
+| lig_uff_file     | filename of UFF-optimized ligand. Useful for e.g. docking |
+| redock_rec_*         | Receptor data where rec pdb == lig pdb |
+| crossdocked_rec_*    | Receptor data selected from pocket where rec pdb != lig pdb |
 | num_pocket_residues | same as in activities                                   |
 | pocket_center_{x,y,z} | same as in activities                                   |
 | pocket_size_{x,y,z}   | same as in activities                                   |
 
-## Creating the dataset
+## All dataset versions
 
-If you desire to create the dataset yourself, first you'll need to get the input data. Download and extract the [ChEMBL sqlite database](https://chembl.gitbook.io/chembl-interface-documentation/downloads) (version 30 in the paper), the [CrossDocked dataset](http://bits.csb.pitt.edu/files/crossdock2020/), [LIT-PCBA](https://drugdesign.unistra.fr/LIT-PCBA/), and the [SIFTS database](https://www.ebi.ac.uk/pdbe/docs/sifts/quick.html) (you want the `pdb_chain_uniprot.csv` file).
+| Version | Notes | ChEMBL version |
+| :---    | :---  | :---           |
+| [1.5](https://storage.googleapis.com/plantain_data/BigBindV1.5.tar.gz)     | More rigorous data splits via pocket-TM-score. Also removed noisy HTS data | 33 |
+| [1.0](https://storage.googleapis.com/bigbind/BigBindV1.tar.bz2) | Initial version of the dataset. Used ProBis splits | 30 |
 
-Now you create your config file. Put the following into `cfg.yaml`:
+# The BayesBind benchmark
 
-```yaml
-
-bigbind_folder: "/path/to/desired/output/folder"
-crossdocked_folder: "/path/to/CrossDocked/dataset"
-lit_pcba_folder: "/path/to/LIT-PCBA/dataset"
-chembl_file: "/path/to/chembl/sqlite/dataset"
-sifts_file: "/path/to/SIFTS/pdb_chain_uniprot/csv/file"
-
-# we cache all intermediate outputs. This is where we should save the cached files
-cache_folder: "/path/to/cache/folder"
-cache: true
-# if something went wrong and you need to recalculate a cached function,
-# put the function name in the recalc list
-recalc:
-  - null
-
+The benchmark directory structure is as follows:
 ```
+BayesBindV1
+└── "val" | "test"
+    └── {pocket_name}/
+        ├── rec.pdb
+        ├── pocket.pdb
+        ├── actives.smi
+        ├── actives.csv
+        ├── random.smi
+        └── random.csv
 
-Now pip install the requirements, and you're ready to run. Simply run `python run.py` and it will produce the dataset. Since we cache intermediate outputs, if something goes wrong you can re-run `run.py` and it will start where it left off. Just make sure you modify offending functions and add them to the `recalc` list before re-running.
+For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have seperate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
 
-Enjoy! If you have any questions, email me at [mixarcid@unc.edu](mailto:mixarcid@unc.edu)
+*Warining!* The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below out cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EEFs. I'm aware this is pretty confusing nomenclature -- please lmk if you have better ideas.
+
+A reference implementation of the EEF metric is in `baselines/eef.py`.
+
+If you use this benchmark and achieve an EEF of at least 100 on 3 out of the 5 targets in the BayesBind test set, please [let me know](mailto:mixarcid@unc.edu)! I will personally come to wherever you are and buy every member of your group a drink.\*
+
+\*Provided you use the BigBind splits for training any ML models. I will also not travel to any active warzones.
+
+## Creating the dataset and benchmark
+
+Right now the code for creating the dataset is relatively brittle and specific to the machines we use. We are working on making this more usable. In the meantime, please reach out to [mixarcid@unc.edu](mailto:mixarcid@unc.edu) if you want to get this running yourself. I am happy to help!

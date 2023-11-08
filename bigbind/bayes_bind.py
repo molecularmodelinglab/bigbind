@@ -1,4 +1,6 @@
+from glob import glob
 import subprocess
+import sys
 import pandas as pd
 import numpy as np
 from omegaconf import OmegaConf
@@ -7,9 +9,10 @@ import shutil
 import random
 
 from tqdm import tqdm
+from baselines.eef import get_all_valid_indexes
 from bigbind.similarity import LigSimilarity
 
-from utils.cfg_utils import get_bayesbind_dir, get_output_dir
+from utils.cfg_utils import get_bayesbind_dir, get_config, get_final_bayesbind_dir, get_output_dir
 from utils.task import task
 
 SEED = 42
@@ -149,3 +152,28 @@ def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
 
 #     for split in ["val", "test"]:
 #         make_all_bayesbind(cfg, cd, split, both_df)
+
+def postproc_bayesbind(cfg):
+    valid_indexes = get_all_valid_indexes(cfg)
+    for in_folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
+        split, poc = in_folder.split("/")[-2:]
+        try:
+            index = valid_indexes[poc]
+        except KeyError:
+            continue
+
+        out_folder = os.path.join(get_final_bayesbind_dir(cfg), split, poc)
+        os.makedirs(out_folder, exist_ok=True)
+
+        act_df = pd.read_csv(in_folder + "/actives.csv")
+        act_df = act_df.loc[index].reset_index(drop=True)
+
+        act_df.to_csv(out_folder + "/actives.csv", index=False)
+        save_smiles(out_folder + "/actives.smi", act_df.lig_smiles)
+
+        for fname in ("pocket.pdb", "rec.pdb", "rec_nofix.pdb", "random.csv", "random.smi"):
+            shutil.copyfile(os.path.join(in_folder, fname), os.path.join(out_folder, fname))
+
+if __name__ == "__main__":
+    cfg = get_config(sys.argv[1])
+    postproc_bayesbind(cfg)

@@ -251,8 +251,11 @@ class PickleTask(Task):
             pickle.dump(ret, f)
 
     def get_output(self, cfg):
+        # print(f"Getting output for {self.name}", flush=True)
         with open(self.get_out_filename(cfg), "rb") as f:
-            return pickle.load(f)
+            ret = pickle.load(f)
+        # print("Finished")
+        return ret
 
 def task(**kwargs):
     def wrapper(f):
@@ -260,7 +263,7 @@ def task(**kwargs):
     return wrapper
 
 def iter_task(n_tasks, max_runtime, **kwargs):
-    """ Creates n_cpu tasks that each run f on a partitioned array """
+    """ Creates n_task tasks that each run f on a partitioned array """
     
     n_cpu = kwargs.get("n_cpu", 1)
 
