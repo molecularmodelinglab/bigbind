@@ -49,7 +49,7 @@ The main meat of the dataset is in the `activities_*.csv` files. The non-SNA act
 
 The SNA activities csvs (`activities_sna_1_*.csv`) have the same structure, but are augmented with putative inactive compounds with no labelled activity.
 
-There are also `structures_*.csv` files describing the 3d crystal structures of ligands if you so desire. This data isn't used in the paper, but you might find it useful. It's really just a way to access the CrossDocked data if you don't care about the docked poses. The structure of the structues file is as follows:
+There are also `structures_*.csv` files describing the 3d crystal structures of ligands if you so desire. This data isn't used in the paper, but you might find it useful. It's really just a way to access the CrossDocked data if you don't care about the docked poses. The structure of the structures file is as follows:
 
 | Column           | Description                                                    |
 | :---             |    :----                                                       |
@@ -86,9 +86,9 @@ BayesBindV1
         └── random.csv
 ```
 
-For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have seperate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
+For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have separate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
 
-**Warining!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below out cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EEFs. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
+**Warining!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below our cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EEFs. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
 
 A reference implementation of the EEF metric is in `baselines/eef.py`.
 
