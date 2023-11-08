@@ -84,15 +84,15 @@ BayesBindV1
         ├── actives.csv
         ├── random.smi
         └── random.csv
-``````
+```
 
 For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have seperate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
 
-*Warining!* The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below out cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EEFs. I'm aware this is pretty confusing nomenclature -- please lmk if you have better ideas.
+**Warining!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below out cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EEFs. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
 
 A reference implementation of the EEF metric is in `baselines/eef.py`.
 
-If you use this benchmark and achieve an EEF of at least 100 on 3 out of the 5 targets in the BayesBind test set, please [let me know](mailto:mixarcid@unc.edu)! I will personally come to wherever you are and buy every member of your group a drink.\*
+If you are the first to achieve an EEF of at least 100 on 3 out of the 5 targets in the BayesBind test set, please [let me know](mailto:mixarcid@unc.edu)! I will personally come to wherever you are and buy every member of your group a drink.\*
 
 \*Provided you use the BigBind splits for training any ML models. I will also not travel to any active warzones.
 
