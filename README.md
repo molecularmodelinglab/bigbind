@@ -1,6 +1,6 @@
 # The BigBind Dataset and BayesBind Benchmark
 
-Here lies the code for generating the BigBind Dataset and BayesBind virtual screening benchmark. Download the latest BigBind Dataset (V1.5) [here](https://storage.googleapis.com/plantain_data/BigBindV1.5.tar.gz) and the latest BayesBind benchmark (V1.0) [here](https://storage.googleapis.com/plantain_data/BayesBindV1.tar.gz).
+Here lies the code for generating the BigBind Dataset and BayesBind virtual screening benchmark. Download the latest BigBind Dataset (V1.5) [here](https://storage.googleapis.com/bigbind_data/BigBindV1.5.tar.gz) and the latest BayesBind benchmark (V1.0) [here](https://storage.googleapis.com/bigbind_data/BayesBindV1.tar.gz).
 
 ## BigBind contents
 
