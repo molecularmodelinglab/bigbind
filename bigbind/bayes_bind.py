@@ -9,7 +9,7 @@ import shutil
 import random
 
 from tqdm import tqdm
-from baselines.eef import get_all_valid_indexes
+from baselines.evaluate import get_all_valid_indexes
 from bigbind.similarity import LigSimilarity
 
 from utils.cfg_utils import get_bayesbind_dir, get_config, get_final_bayesbind_dir, get_output_dir
