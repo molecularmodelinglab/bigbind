@@ -172,6 +172,26 @@ def make_vina_gnina_workflow(cfg):
 
     return Workflow(cfg, vina_outputs)
 
+def postproc_gnina(cfg):
+    """ Re-indexes gnina predictions according to valid_indexes """
+    for split, pocket in tqdm(get_all_bayesbind_splits_and_pockets(cfg)):
+        folder = get_baseline_dir(cfg, "gnina", split, pocket)
+        for prefix in [ "actives", "random" ]:
+            csv = prefix + ".csv"
+            df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{csv}")
+            if prefix == "actives":
+                valid_indexes = df.query("standard_type != 'Potency'").index            
+            else:
+                valid_indexes = df.index
+            with open(folder + f"/{prefix}.txt", "w") as f:
+                for i, index in enumerate(valid_indexes):
+                    docked_fname = f"{prefix}_{index}.sdf"
+                    if os.path.exists(folder + "/" + docked_fname):
+                        f.write(docked_fname + "\n")
+                    else:
+                        f.write("\n")
+
 if __name__ == "__main__":
     cfg = get_config("local")
-    make_vina_gnina_workflow(cfg).run()
+    # make_vina_gnina_workflow(cfg).run()
+    postproc_gnina(cfg)

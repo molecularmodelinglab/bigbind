@@ -1,12 +1,7 @@
 
-from glob import glob
 import numpy as np
-import pandas as pd
 import scipy
 from scipy.stats import binomtest
-from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
-
-from utils.cfg_utils import get_bayesbind_dir
 
 class CutoffExpDist:
     """Exponential distribution for X > C, undefined otherwise"""
@@ -51,13 +46,7 @@ def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_frac):
     :param select_frac: top fraction of compounds selected. E.g. 0.01 for EEF_1%
     :returns: Tuple of (EEF, lower bound, upper bound, p-value that EEF > 1)"""
 
-    # assert select_num is None
-    # select_num = int((1 - select_frac) * len(rand_preds)) + 1
-    if select_num is None:
-        assert select_frac is not None
-        select_num = int((1 - select_frac) * len(rand_preds)) + 1
-    else:
-        assert select_frac is None
+    select_num = int((1 - select_frac) * len(rand_preds)) + 1
 
     select = sorted(rand_preds)[select_num-1]
     is_active = activities >= act_cutoff
@@ -90,7 +79,7 @@ def calc_best_eef(preds, true_act, act_cutoff):
     cur_best = None
     seen_fracs = set()
     for act in preds["actives"]:
-        cur_frac = (preds["random"] >= act).sum()/len(preds["random"])
+        cur_frac = float((preds["random"] >= act).sum()/len(preds["random"]))
         if cur_frac in seen_fracs:
             continue
         if cur_frac == 0:
