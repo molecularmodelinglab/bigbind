@@ -9,7 +9,6 @@ import shutil
 import random
 
 from tqdm import tqdm
-from baselines.evaluate import get_all_valid_indexes
 from bigbind.similarity import LigSimilarity
 
 from utils.cfg_utils import get_bayesbind_dir, get_config, get_final_bayesbind_dir, get_output_dir
@@ -154,6 +153,7 @@ def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
 #         make_all_bayesbind(cfg, cd, split, both_df)
 
 def postproc_bayesbind(cfg):
+    from baselines.evaluate import get_all_valid_indexes
     valid_indexes = get_all_valid_indexes(cfg)
     for in_folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
         split, poc = in_folder.split("/")[-2:]

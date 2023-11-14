@@ -9,7 +9,6 @@ import networkx as nx
 
 from utils.cache import cache
 from bigbind.tanimoto_matrix import get_tanimoto_matrix, get_morgan_fps_parallel
-from old.probis import convert_inter_results_to_json, get_rep_recs
 from utils.cfg_utils import get_figure_dir
 from utils.task import iter_task, simple_task, task
 

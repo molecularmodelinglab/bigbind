@@ -1,6 +1,5 @@
 import pandas as pd
 from tqdm import tqdm
-from baselines.eef import get_all_metrics
 from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
 from bigbind.bigbind import make_bigbind_workflow
 from bigbind.knn import get_knn_preds
