@@ -1592,7 +1592,6 @@ if __name__ == "__main__":
     # for node in workflow.nodes:
     #     print(node)
 
-    workflow.prev_run_name = "v2_fixed"
     workflow.run()
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")
