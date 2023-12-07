@@ -17,5 +17,6 @@ meeko
 google-cloud-storage
 matplotlib
 scikit-learn
+chembl_structure_pipeline
 # todo:
 # conda install -c conda-forge pdbfixer

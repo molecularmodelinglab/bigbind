@@ -35,7 +35,6 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
 
     rec_cluster = poc_df.rec_cluster[0]
 
-    # poc_df["alpha"] = cd.get_alphas(poc_df.lig_smiles)
 
     for key in [ "ex_rec_file", "ex_rec_pdb", "ex_rec_pocket_file", "num_pocket_residues",
                  "pocket_center_x", "pocket_center_y", "pocket_center_z", 
