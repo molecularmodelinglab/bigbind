@@ -14,6 +14,7 @@ from bigbind.similarity import LigSimilarity
 
 from utils.cfg_utils import get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_final_bayesbind_dir, get_output_dir
 from utils.task import task
+from utils.workflow import Workflow
 
 SEED = 42
 np.random.seed(SEED)
@@ -202,13 +203,15 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
     shutil.copyfile(bayesbind_folder + "/random.smi", folder + "/random.smi")
 
 
-@task()
+@task(force=True)
 def make_all_bayesbind_struct(cfg, saved_bayesbind, cluster_cutoff=8, act_cutoff=5):
 
     struct_dfs = {
         "val": pd.read_csv(f"{get_output_dir(cfg)}/structures_val.csv"),
         "test": pd.read_csv(f"{get_output_dir(cfg)}/structures_test.csv"),
     }
+    for key in struct_dfs:
+        struct_dfs[key] = struct_dfs[key][struct_dfs[key].pchembl_value.notnull()]
 
     for split, pocket in get_all_bayesbind_splits_and_pockets(cfg):
         df = struct_dfs[split]
@@ -219,3 +222,11 @@ def make_all_bayesbind_struct(cfg, saved_bayesbind, cluster_cutoff=8, act_cutoff
         if active_clusters > 8:
             print(f"Running on {split}/{pocket} {tot_clusters=} {active_clusters=}")
             make_bayesbind_struct_dir(cfg, split, pocket, df)
+
+if __name__ == "__main__":
+    cfg = get_config("local")
+
+    saved_bayesbind_struct = make_all_bayesbind_struct(None)
+
+    workflow = Workflow(cfg, saved_bayesbind_struct)
+    workflow.run()

@@ -208,7 +208,8 @@ def run_gnina_on_bayesbind_struct(cfg):
         out_folder = get_baseline_struct_dir(cfg, "gnina", split, pocket)
         df = pd.read_csv(folder + "/actives.csv")
 
-        gnina_preds = []
+        gnina_min_aff = []
+        gnina_cnn_aff = []
         for i, row in tqdm(df.iterrows(), total=len(df)):
             rec_file = folder + "/" + row.redock_rec_file
             lig_file = folder + "/" + row.lig_crystal_file
@@ -218,9 +219,11 @@ def run_gnina_on_bayesbind_struct(cfg):
             subprocess.run(cmd, shell=True, check=True)
 
             lig = Chem.SDMolSupplier(out_file)[0]
-            gnina_preds.append(lig.GetProp("minimizedAffinity"))
+            gnina_min_aff.append(lig.GetProp("minimizedAffinity"))
+            gnina_cnn_aff.append(lig.GetProp("CNNaffinity"))
 
-        df["gnina_min_affinity"] = gnina_preds
+        df["gnina_min_affinity"] = gnina_min_aff
+        df["gnina_cnn_affinity"] = gnina_cnn_aff
         df.to_csv(out_folder + "/actives.csv", index=False)
 
 if __name__ == "__main__":
