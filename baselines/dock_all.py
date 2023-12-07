@@ -12,8 +12,6 @@ from utils.workflow import Workflow
 TIMEOUT = 60*10
 VINA_GNINA_CPUS = 1
 def run_full_gnina(cfg, args):
-    """ Run either Vina or Gnina on a single ligand. Program
-    is either 'vina' or 'gnina'. """
 
     try:
 

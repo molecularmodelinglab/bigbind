@@ -16,6 +16,8 @@ from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get
 from utils.task import iter_task, simple_task, task
 from utils.workflow import Workflow
 
+MAX_LIGANDS_PER_REC = 1000
+
 def get_cache_dir(cfg):
     ret = os.path.join(cfg.host.work_dir, cfg.run_name, "local", "vina_cache")
     os.makedirs(ret, exist_ok=True)
@@ -76,7 +78,7 @@ def prepare_lig_pdbqt(cfg, lig_file, center, size):
 
     return out_file, size
 
-TIMEOUT = 60*5
+TIMEOUT = 60*15
 VINA_GNINA_CPUS = 4
 def run_program(cfg, program, split, pocket, row, out_file, cpus=VINA_GNINA_CPUS):
     """ Run either Vina or Gnina on a single ligand. Program
@@ -124,6 +126,7 @@ def prepare_docking_inputs(cfg, rec_pdbqts, program):
         for prefix in [ "actives", "random" ]:
             csv = prefix + ".csv"
             df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{csv}")
+            df = df.iloc[:MAX_LIGANDS_PER_REC]
             for i, row in df.iterrows():
                 out_file = get_baseline_dir(cfg, program, split, pocket) + f"/{prefix}_{i}.{ext}"
                 ret.append((split, pocket, row, out_file))
@@ -144,7 +147,7 @@ def run_vina(cfg, args):
         print_exc()
         return None
 
-run_all_vina = iter_task(60, 48, n_cpu=1, mem=128, force=True)(run_vina)
+run_all_vina = iter_task(1, 100*24, n_cpu=1, mem=128, force=True)(run_vina)
 
 @task(max_runtime=0.1)
 def prepare_gnina_inputs(cfg):
@@ -159,7 +162,7 @@ def run_gnina(cfg, args):
         print_exc()
         return None
 
-run_all_gnina = iter_task(60, 48, n_cpu=1, mem=128)(run_gnina)
+run_all_gnina = iter_task(1, 100*24, n_cpu=1, mem=128)(run_gnina)
 
 def make_vina_gnina_workflow(cfg):
 

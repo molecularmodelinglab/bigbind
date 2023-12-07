@@ -100,8 +100,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = get_config(args.host)
-    # workflow = make_bigbind_workflow(cfg)
-    workflow = make_dock_workflow(cfg)
+    workflow = make_vina_gnina_workflow(cfg)
+    # workflow = make_dock_workflow(cfg)
 
     if args.sync:
         sync_to(cfg)
