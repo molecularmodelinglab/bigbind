@@ -91,31 +91,36 @@ async def submit_tasks(cfg, workflow, task_names):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("host", help="Name of host in hosts file")
-    parser.add_argument("-t", "--task-name")
-    parser.add_argument("-n", "--node-index", type=int)
-    parser.add_argument("-s", "--submit", action="store_true")
-    parser.add_argument("--sync", help="sync with gs bucket before running", action="store_true")
-    args = parser.parse_args()
+    try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("host", help="Name of host in hosts file")
+        parser.add_argument("-t", "--task-name")
+        parser.add_argument("-n", "--node-index", type=int)
+        parser.add_argument("-s", "--submit", action="store_true")
+        parser.add_argument("--sync", help="sync with gs bucket before running", action="store_true")
+        args = parser.parse_args()
 
-    cfg = get_config(args.host)
-    workflow = make_vina_gnina_workflow(cfg)
-    # workflow = make_dock_workflow(cfg)
+        cfg = get_config(args.host)
+        workflow = make_vina_gnina_workflow(cfg)
+        # workflow = make_dock_workflow(cfg)
 
-    if args.sync:
-        sync_to(cfg)
+        if args.sync:
+            sync_to(cfg)
 
-    if args.node_index is not None:
-        if args.submit:
-            raise NotImplementedError
+        if args.node_index is not None:
+            if args.submit:
+                raise NotImplementedError
+            else:
+                run_single_node(cfg, workflow, args.node_index)
+        
         else:
-            run_single_node(cfg, workflow, args.node_index)
-    
-    else:
-        task_names = workflow.get_output_task_names() if args.task_name is None else [ args.task_name ]
+            task_names = workflow.get_output_task_names() if args.task_name is None else [ args.task_name ]
 
-        if args.submit:
-            asyncio.run(submit_tasks(cfg, workflow, task_names))
-        else:
-            raise NotImplementedError
+            if args.submit:
+                asyncio.run(submit_tasks(cfg, workflow, task_names))
+            else:
+                raise NotImplementedError
+    except:
+        sys.stderr.flush()
+        sys.stdout.flush()
+        raise

@@ -12,7 +12,7 @@ from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 from meeko import MoleculePreparation
 from tqdm import tqdm
 
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get_output_dir
+from utils.cfg_utils import get_baseline_dir, get_baseline_struct_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_output_dir
 from utils.task import iter_task, simple_task, task
 from utils.workflow import Workflow
 
@@ -28,6 +28,14 @@ def get_all_bayesbind_splits_and_pockets(cfg):
     ret = []
     for split in ["val", "test"]:
         for pocket in os.listdir(get_bayesbind_dir(cfg) + f"/{split}"):
+            ret.append((split, pocket))
+    return ret
+
+def get_all_bayesbind_struct_splits_and_pockets(cfg):
+    """ Returns a list of (split, pocket) tuples """
+    ret = []
+    for split in ["val", "test"]:
+        for pocket in os.listdir(get_bayesbind_struct_dir(cfg) + f"/{split}"):
             ret.append((split, pocket))
     return ret
 
@@ -175,26 +183,46 @@ def make_vina_gnina_workflow(cfg):
 
     return Workflow(cfg, gnina_outputs)
 
-def postproc_gnina(cfg):
-    """ Re-indexes gnina predictions according to valid_indexes """
-    for split, pocket in tqdm(get_all_bayesbind_splits_and_pockets(cfg)):
-        folder = get_baseline_dir(cfg, "gnina", split, pocket)
-        for prefix in [ "actives", "random" ]:
-            csv = prefix + ".csv"
-            df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{csv}")
-            if prefix == "actives":
-                valid_indexes = df.query("standard_type != 'Potency'").index            
-            else:
-                valid_indexes = df.index
-            with open(folder + f"/{prefix}.txt", "w") as f:
-                for i, index in enumerate(valid_indexes):
-                    docked_fname = f"{prefix}_{index}.sdf"
-                    if os.path.exists(folder + "/" + docked_fname):
-                        f.write(docked_fname + "\n")
-                    else:
-                        f.write("\n")
+# def postproc_gnina(cfg):
+#     """ Re-indexes gnina predictions according to valid_indexes """
+#     for split, pocket in tqdm(get_all_bayesbind_splits_and_pockets(cfg)):
+#         folder = get_baseline_dir(cfg, "gnina", split, pocket)
+#         for prefix in [ "actives", "random" ]:
+#             csv = prefix + ".csv"
+#             df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{csv}")
+#             if prefix == "actives":
+#                 valid_indexes = df.query("standard_type != 'Potency'").index            
+#             else:
+#                 valid_indexes = df.index
+#             with open(folder + f"/{prefix}.txt", "w") as f:
+#                 for i, index in enumerate(valid_indexes):
+#                     docked_fname = f"{prefix}_{index}.sdf"
+#                     if os.path.exists(folder + "/" + docked_fname):
+#                         f.write(docked_fname + "\n")
+#                     else:
+#                         f.write("\n")
+
+def run_gnina_on_bayesbind_struct(cfg):
+    for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
+        folder = get_bayesbind_struct_dir(cfg) + f"/{split}/{pocket}"
+        out_folder = get_baseline_struct_dir(cfg, "gnina", split, pocket)
+        df = pd.read_csv(folder + "/actives.csv")
+
+        gnina_preds = []
+        for i, row in tqdm(df.iterrows(), total=len(df)):
+            rec_file = folder + "/" + row.redock_rec_file
+            lig_file = folder + "/" + row.lig_crystal_file
+            out_file = out_folder + f"/{i}.sdf"
+
+            cmd = f"gnina --receptor {rec_file} --ligand {lig_file} --minimize --cnn crossdock_default2018 --out {out_file}"
+            subprocess.run(cmd, shell=True, check=True)
+
+            lig = Chem.SDMolSupplier(out_file)[0]
+            gnina_preds.append(lig.GetProp("minimizedAffinity"))
+
+        df["gnina_min_affinity"] = gnina_preds
+        df.to_csv(out_folder + "/actives.csv", index=False)
 
 if __name__ == "__main__":
     cfg = get_config("local")
-    # make_vina_gnina_workflow(cfg).run()
-    postproc_gnina(cfg)
+    run_gnina_on_bayesbind_struct(cfg)

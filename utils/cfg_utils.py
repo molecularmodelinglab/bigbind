@@ -35,6 +35,11 @@ def get_baseline_dir(cfg, program_name, split, pocket):
     os.makedirs(ret, exist_ok=True)
     return ret
 
+def get_baseline_struct_dir(cfg, program_name, split, pocket):
+    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "struct_baselines", program_name, split, pocket)
+    os.makedirs(ret, exist_ok=True)
+    return ret
+
 def get_docked_dir(cfg, program_name, split):
     ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "docked", program_name, split)
     os.makedirs(ret, exist_ok=True)
