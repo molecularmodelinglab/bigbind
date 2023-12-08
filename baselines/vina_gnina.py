@@ -64,7 +64,7 @@ def prepare_all_rec_pdbqts(cfg):
     for split, pocket in get_all_bayesbind_splits_and_pockets(cfg):
         in_file = get_bayesbind_dir(cfg) + f"/{split}/{pocket}/rec.pdb"
         out_file = get_baseline_dir(cfg, "vina", split, pocket) + "/rec.pdbqt"
-        cmd = f"obabel -xr -ipdb {in_file} -opdbqt -O{out_file}"
+        cmd = f"obabel -xr -ipdb {in_file} -opdbqt -O{out_file} -p 7"
         print(f"Running: {cmd}")
         subprocess.run(cmd, shell=True, check=True)
 
