@@ -20,7 +20,8 @@ def prep_ligs(cfg, out_folder):
             # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
             cmd = f"ligprep -ismi {smi_file} -omae {out_file}"
             print("Running " + cmd)
-            subprocess.run(cmd, shell=True)
+            subprocess.run(cmd, shell=True, check=True)
+        # break
 
 def prep_recs(cfg, out_folder):
     """ Run prepwizard on all the rec files """
@@ -34,7 +35,7 @@ def prep_recs(cfg, out_folder):
         # os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
         cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file}"
         print("Running " + cmd)
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True)
 
 def finalize_rec_prep(cfg, out_folder):
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
@@ -74,7 +75,7 @@ RECEP_FILE {rec_mae}
         
         cmd = f"glide {in_file}"
         print(f"Running {cmd}")
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True)
 
 def dock_all(cfg, out_folder):
 
@@ -118,7 +119,7 @@ LIGANDFILE {lig_file}
             os.chdir(output_folder)
             cmd = f"glide {in_file} -HOST {HOST} "
             print(f"Running {cmd} from {os.path.abspath('.')}")
-            subprocess.run(cmd, shell=True)
+            subprocess.run(cmd, shell=True, check=True)
 
 def glide_to_sdf(cfg, out_folder):
 
@@ -158,10 +159,10 @@ if __name__ == "__main__":
     # if not os.path.exists("baseline_data"):
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
-    # prep_ligs(cfg, out_folder)
+    prep_ligs(cfg, out_folder)
     # prep_recs(cfg, out_folder)
     # finalize_rec_prep(cfg, out_folder)
     # make_grids(cfg, out_folder)
-    dock_all(cfg, out_folder)
+    # dock_all(cfg, out_folder)
     # glide_to_sdf(cfg, out_folder)
             

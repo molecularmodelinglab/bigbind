@@ -181,7 +181,7 @@ def make_vina_gnina_workflow(cfg):
     gnina_inputs = prepare_gnina_inputs()
     gnina_outputs = run_all_gnina(gnina_inputs)
 
-    return Workflow(cfg, gnina_outputs, vina_outputs)
+    return Workflow(cfg, vina_outputs)
 
 # def postproc_gnina(cfg):
 #     """ Re-indexes gnina predictions according to valid_indexes """
