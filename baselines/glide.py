@@ -8,17 +8,26 @@ import subprocess
 from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get_parent_baseline_dir
 
 HOST = "\"general:6\""
+MAX_LIGANDS_PER_REC = 1000
 
 def prep_ligs(cfg, out_folder):
     """ Run ligprep on all the actives and random smi files"""
     for folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
         for smi_file in [ folder + "/actives.smi", folder + "/random.smi" ]:
+
+            # create new smi file with only the first MAX_LIGANDS_PER_REC ligands
+            out_smi_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + f"_{MAX_LIGANDS_PER_REC}.smi"
+            with open(smi_file, "r") as f:
+                lines = f.readlines()
+                with open(out_smi_file, "w") as f2:
+                    f2.writelines(lines[:MAX_LIGANDS_PER_REC])
+
             # out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".sdf"
             out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".mae"
             if os.path.exists(out_file): continue
             os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
             # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
-            cmd = f"ligprep -ismi {smi_file} -omae {out_file}"
+            cmd = f"ligprep -ismi {out_smi_file} -omae {out_file}"
             print("Running " + cmd)
             subprocess.run(cmd, shell=True, check=True)
         # break
