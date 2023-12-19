@@ -177,11 +177,11 @@ cd {abs_path}
                     continue
 
                 # print(f"Writing docking params to {in_file}")
-                with open(in_file, "w") as f:
-                    f.write(
-    f"""GRIDFILE {gridfile}
-    LIGANDFILE {lig_file}
-    """
+                with open(in_file, "w") as in_f:
+                    in_f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_file}
+"""
                     )
 
                 os.chdir(output_folder)
