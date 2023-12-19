@@ -1,4 +1,6 @@
+from multiprocessing import Pool
 import sys
+from functools import partial
 from omegaconf import OmegaConf
 from glob import glob
 import pandas as pd
@@ -8,41 +10,52 @@ from tqdm import tqdm
 
 from utils.cfg_utils import get_baseline_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir, get_parent_baseline_struct_dir
 
-def prep_ligs(cfg, out_folder):
-    """ Run ligprep on all the actives and random smi files"""
-    for folder in glob(get_bayesbind_struct_dir(cfg) + "/*/*"):
-        for lig_file in tqdm(glob(folder + "/*_lig.sdf")):
-            out_folder = "/".join(lig_file.split("/")[:-1])
-            out_file = out_folder + "/" + "/".join(lig_file.split("/")[-3:])
-            if os.path.exists(out_file): continue
-            os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-
-            # use obabel to add hydrogens -- nothing else needed
-            cmd = f"obabel -isd {lig_file} -osd -O {out_file} -p 7 --gen3D"
-            print("Running " + cmd)
-            subprocess.run(cmd, shell=True, check=True)
-
-
-def prep_recs(cfg, out_folder):
-    """ Run prepwizard on all the rec files """
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-        rec_file = folder + "/rec.pdb"
-        # out_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-        # for some godforsaken reason there's a memory error if I try to 
-        # output the final file directly. But a tmp file and copying works
-        out_file = f"rec_{i}.mae"
+def prep_single_lig(out_folder, folder):
+    """ Use individual components of ligprep to protonate the ligands"""
+    for lig_file in tqdm(glob(folder + "/*_lig.sdf")):
+        out_file = out_folder + "/" + "/".join(lig_file.split("/")[-3:]).split(".")[0] + ".mae"
+        
+        # temp files for hydrogens and neutralization
+        out_file_h = out_file.replace(".mae", "_h.mae")
+        out_file_n = out_file.replace(".mae", "_n.mae")
+        bad_file = out_file.replace(".mae", "_bad.mae")
+        
         if os.path.exists(out_file): continue
-        # os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-        cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file}"
+        os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
+
+        # use obabel to add hydrogens -- nothing else needed
+        cmd = f"$SCHRODINGER/utilities/applyhtreat {lig_file} {out_file_h} && $SCHRODINGER/utilities/neutralizer {out_file_h} {out_file_n} && $SCHRODINGER/utilities/ionizer -i {out_file_n} -o {out_file} -b {bad_file} && rm -f {out_file_h} {out_file_n} {bad_file}"
         print("Running " + cmd)
         subprocess.run(cmd, shell=True, check=True)
 
-def finalize_rec_prep(cfg, out_folder):
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-        rec_file = folder + "/rec.pdb"
-        old_file = f"rec_{i}.mae"
-        new_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-        os.rename(old_file, new_file)
+def prep_ligs(cfg, out_folder):
+    folders = glob(get_bayesbind_struct_dir(cfg) + "/*/*")
+    with Pool(8) as p:
+        p.map(partial(prep_single_lig, out_folder), folders)
+
+
+def prep_single_rec(out_folder, folder):
+    for rec_file in tqdm(glob(folder + "/*_rec.pdb")):
+        out_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        
+        if os.path.exists(out_file): continue
+        cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file} -NOJOBID"
+        print("Running " + cmd)
+        subprocess.run(cmd, shell=True, check=True)
+
+def prep_recs(cfg, out_folder):
+    """ Run prepwizard on all the rec files """
+    folders = glob(get_bayesbind_struct_dir(cfg) + "/*/*")
+    f = partial(prep_single_rec, out_folder)
+    with Pool(8) as p:
+        p.map(partial(prep_single_rec, out_folder), folders)
+
+# def finalize_rec_prep(cfg, out_folder):
+#     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
+#         rec_file = folder + "/rec.pdb"
+#         old_file = f"rec_{i}.mae"
+#         new_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+#         os.rename(old_file, new_file)
 
 def make_grids(cfg, out_folder):
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
@@ -159,8 +172,8 @@ if __name__ == "__main__":
     # if not os.path.exists("baseline_data"):
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
-    prep_ligs(cfg, out_folder)
-    # prep_recs(cfg, out_folder)
+    # prep_ligs(cfg, out_folder)
+    prep_recs(cfg, out_folder)
     # finalize_rec_prep(cfg, out_folder)
     # make_grids(cfg, out_folder)
     # dock_all(cfg, out_folder)

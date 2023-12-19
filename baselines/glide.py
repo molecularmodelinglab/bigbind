@@ -129,7 +129,66 @@ LIGANDFILE {lig_file}
             os.chdir(output_folder)
             cmd = f"glide {in_file} -HOST {HOST} "
             print(f"Running {cmd} from {os.path.abspath('.')}")
-            subprocess.run(cmd, shell=True, check=True)
+            
+            # subprocess.run(cmd, shell=True, check=True)
+
+def dock_all_slurm(cfg, out_folder):
+
+    abs_path = os.path.abspath(".")
+    
+    for prefix in ["actives", "random"]:
+        with open(f"glide_{prefix}.sh", "w") as f:
+            f.write(
+f"""#!/bin/bash
+#SBATCH --job-name=glide_{prefix}
+#SBATCH --time=10-00:00:00
+#SBATCH --cpus-per-task=15
+#SBATCH --mem=16G
+#SBATCH --output=dock_{prefix}.out
+#SBATCH --error=dock_{prefix}.err
+#SBATCH --partition=general
+
+module load schrodinger
+cd {abs_path}
+
+""")
+        for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
+
+            split, poc = folder.split("/")[-2:]
+
+            os.chdir(abs_path)
+
+            rec_file = folder + "/rec.pdb"
+            rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+            cur_folder = "/".join(rec_mae.split("/")[:-1])
+            os.makedirs(cur_folder, exist_ok=True)
+
+            gridfile = cur_folder + "/grid.zip"
+
+            lig_file = cur_folder + "/" + prefix + ".mae"
+            in_file = cur_folder + "/dock_" + prefix + ".in"
+            output_folder = cur_folder + "/" + prefix + "_results"
+            os.makedirs(output_folder, exist_ok=True)
+
+            out_file = output_folder + f"/dock_{prefix}.csv"
+            if os.path.exists(out_file):
+                print("Already ran glide for " + out_file)
+                continue
+
+            # print(f"Writing docking params to {in_file}")
+            with open(in_file, "w") as f:
+                f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_file}
+"""
+                )
+
+            os.chdir(output_folder)
+            cmd = f"glide {in_file}"
+            # print(f"Running {cmd} from {os.path.abspath('.')}")
+            f.write(cmd + "\n")
+            # subprocess.run(cmd, shell=True, check=True)
 
 def glide_to_sdf(cfg, out_folder):
 
@@ -169,10 +228,11 @@ if __name__ == "__main__":
     # if not os.path.exists("baseline_data"):
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
-    prep_ligs(cfg, out_folder)
+    # prep_ligs(cfg, out_folder)
     # prep_recs(cfg, out_folder)
     # finalize_rec_prep(cfg, out_folder)
     # make_grids(cfg, out_folder)
     # dock_all(cfg, out_folder)
+    dock_all_slurm(cfg, out_folder)
     # glide_to_sdf(cfg, out_folder)
             
