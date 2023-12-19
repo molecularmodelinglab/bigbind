@@ -137,6 +137,7 @@ def dock_all_slurm(cfg, out_folder):
     abs_path = os.path.abspath(".")
     
     for prefix in ["actives", "random"]:
+        print(f"Writing to {os.path.abspath(f'glide_{prefix}.sh')}")
         with open(f"glide_{prefix}.sh", "w") as f:
             f.write(
 f"""#!/bin/bash
