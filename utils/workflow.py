@@ -75,6 +75,8 @@ class Workflow:
                         raise
                         # pass
         
+
+            print(f"Preparing to run {node}")
             args = recursive_map(maybe_run_node, node.args)
             kwargs = recursive_map(maybe_run_node, node.kwargs)
 
