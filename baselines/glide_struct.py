@@ -4,13 +4,14 @@ from glob import glob
 import pandas as pd
 import os
 import subprocess
+from tqdm import tqdm
 
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get_parent_baseline_dir, get_parent_baseline_struct_dir
+from utils.cfg_utils import get_baseline_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir, get_parent_baseline_struct_dir
 
 def prep_ligs(cfg, out_folder):
     """ Run ligprep on all the actives and random smi files"""
-    for folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
-        for lig_file in glob(folder + "/*_lig.sdf"):
+    for folder in glob(get_bayesbind_struct_dir(cfg) + "/*/*"):
+        for lig_file in tqdm(glob(folder + "/*_lig.sdf")):
             out_folder = "/".join(lig_file.split("/")[:-1])
             out_file = out_folder + "/" + "/".join(lig_file.split("/")[-3:])
             if os.path.exists(out_file): continue
