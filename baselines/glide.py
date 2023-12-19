@@ -152,43 +152,43 @@ module load schrodinger
 cd {abs_path}
 
 """)
-        for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
+            for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
 
-            split, poc = folder.split("/")[-2:]
+                split, poc = folder.split("/")[-2:]
 
-            os.chdir(abs_path)
+                os.chdir(abs_path)
 
-            rec_file = folder + "/rec.pdb"
-            rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+                rec_file = folder + "/rec.pdb"
+                rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
 
-            cur_folder = "/".join(rec_mae.split("/")[:-1])
-            os.makedirs(cur_folder, exist_ok=True)
+                cur_folder = "/".join(rec_mae.split("/")[:-1])
+                os.makedirs(cur_folder, exist_ok=True)
 
-            gridfile = cur_folder + "/grid.zip"
+                gridfile = cur_folder + "/grid.zip"
 
-            lig_file = cur_folder + "/" + prefix + ".mae"
-            in_file = cur_folder + "/dock_" + prefix + ".in"
-            output_folder = cur_folder + "/" + prefix + "_results"
-            os.makedirs(output_folder, exist_ok=True)
+                lig_file = cur_folder + "/" + prefix + ".mae"
+                in_file = cur_folder + "/dock_" + prefix + ".in"
+                output_folder = cur_folder + "/" + prefix + "_results"
+                os.makedirs(output_folder, exist_ok=True)
 
-            out_file = output_folder + f"/dock_{prefix}.csv"
-            if os.path.exists(out_file):
-                print("Already ran glide for " + out_file)
-                continue
+                out_file = output_folder + f"/dock_{prefix}.csv"
+                if os.path.exists(out_file):
+                    print("Already ran glide for " + out_file)
+                    continue
 
-            # print(f"Writing docking params to {in_file}")
-            with open(in_file, "w") as f:
-                f.write(
-f"""GRIDFILE {gridfile}
-LIGANDFILE {lig_file}
-"""
-                )
+                # print(f"Writing docking params to {in_file}")
+                with open(in_file, "w") as f:
+                    f.write(
+    f"""GRIDFILE {gridfile}
+    LIGANDFILE {lig_file}
+    """
+                    )
 
-            os.chdir(output_folder)
-            cmd = f"glide {in_file}"
-            # print(f"Running {cmd} from {os.path.abspath('.')}")
-            f.write(cmd + "\n")
-            # subprocess.run(cmd, shell=True, check=True)
+                os.chdir(output_folder)
+                cmd = f"glide {in_file}"
+                # print(f"Running {cmd} from {os.path.abspath('.')}")
+                f.write(cmd + "\n")
+                # subprocess.run(cmd, shell=True, check=True)
 
 def glide_to_sdf(cfg, out_folder):
 
