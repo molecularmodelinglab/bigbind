@@ -5,7 +5,9 @@ import pandas as pd
 import os
 import subprocess
 
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get_parent_baseline_dir
+from tqdm import tqdm
+
+from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir
 
 HOST = "\"general:6\""
 MAX_LIGANDS_PER_REC = 1000
@@ -86,7 +88,7 @@ RECEP_FILE {rec_mae}
         cmd = f"glide {in_file}"
         print(f"Running {cmd}")
         subprocess.run(cmd, shell=True, check=True)
-
+        
 def dock_all(cfg, out_folder):
 
     abs_path = os.path.abspath(".")

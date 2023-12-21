@@ -86,8 +86,8 @@ def prepare_lig_pdbqt(cfg, lig_file, center, size):
 
     return out_file, size
 
-TIMEOUT = 60*15
-VINA_GNINA_CPUS = 4
+TIMEOUT = None # 60*15
+VINA_GNINA_CPUS = 1
 def run_program(cfg, program, split, pocket, row, out_file, cpus=VINA_GNINA_CPUS):
     """ Run either Vina or Gnina on a single ligand. Program
     is either 'vina' or 'gnina'. """
@@ -155,7 +155,7 @@ def run_vina(cfg, args):
         print_exc()
         return None
 
-run_all_vina = iter_task(600, 100*24, n_cpu=1, mem=128, force=True)(run_vina)
+run_all_vina = iter_task(600, 5*600*24, n_cpu=1, mem=128, force=True)(run_vina)
 
 @task(max_runtime=0.1)
 def prepare_gnina_inputs(cfg):
@@ -170,7 +170,7 @@ def run_gnina(cfg, args):
         print_exc()
         return None
 
-run_all_gnina = iter_task(600, 100*24, n_cpu=1, mem=128)(run_gnina)
+run_all_gnina = iter_task(600, 5*600*24, n_cpu=1, mem=128, force=True)(run_gnina)
 
 def make_vina_gnina_workflow(cfg):
 
