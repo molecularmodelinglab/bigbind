@@ -8,7 +8,7 @@ import os
 import subprocess
 from tqdm import tqdm
 
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir, get_parent_baseline_struct_dir
+from utils.cfg_utils import get_baseline_dir, get_baseline_struct_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir, get_parent_baseline_struct_dir
 
 def prep_single_lig(out_folder, folder):
     """ Use individual components of ligprep to protonate the ligands"""
@@ -50,31 +50,137 @@ def prep_recs(cfg, out_folder):
     with Pool(8) as p:
         p.map(partial(prep_single_rec, out_folder), folders)
 
-# def finalize_rec_prep(cfg, out_folder):
-#     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-#         rec_file = folder + "/rec.pdb"
-#         old_file = f"rec_{i}.mae"
-#         new_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-#         os.rename(old_file, new_file)
-
 def make_grids(cfg, out_folder):
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-        rec_file = folder + "/rec.pdb"
+    for i, folder in enumerate(glob(get_bayesbind_struct_dir(cfg) + f"/*/*")):
+        df = pd.read_csv(folder + "/actives.csv")
+        for i, row in tqdm(df.iterrows(), total=len(df)):
+            rec_file = folder + "/" + row.redock_rec_file
+            rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+            cur_folder = "/".join(rec_mae.split("/")[:-1])
+            os.makedirs(cur_folder, exist_ok=True)
+            
+            gridfile = rec_mae.replace(".mae", "_grid.zip")
+            in_file = rec_mae.replace(".mae", "_grid.in")
+            row = df.iloc[0]
+
+            if os.path.exists(gridfile): continue
+
+            # inner box is X times the size of outer box
+            inner_scale = 0.5
+
+            print(f"Writing grid params to {in_file}")
+            with open(in_file, "w") as f:
+                f.write(
+    f"""INNERBOX {int(row.pocket_size_x*inner_scale)}, {int(row.pocket_size_y*inner_scale)},{int(row.pocket_size_z*inner_scale)}
+    ACTXRANGE {row.pocket_size_x}
+    ACTYRANGE {row.pocket_size_y}
+    ACTZRANGE {row.pocket_size_z}
+    OUTERBOX {row.pocket_size_x}, {row.pocket_size_y}, {row.pocket_size_z}
+    GRID_CENTER {row.pocket_center_x}, {row.pocket_center_y}, {row.pocket_center_z}
+    GRIDFILE {gridfile}
+    RECEP_FILE {rec_mae}
+    """
+                )
+            
+            cmd = f"glide {in_file}  -NOJOBID"
+            print(f"Running {cmd}")
+            subprocess.run(cmd, shell=True, check=True)
+
+
+            dock_in_file = cur_folder + "/dock_" + row.pdb + ".in"
+            output_folder = cur_folder + "/" + row.pdb
+            os.makedirs(output_folder, exist_ok=True)
+
+
+            lig_file = folder + "/" + row.lig_crystal_file
+            lig_mae = out_folder + "/" + "/".join(lig_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+
+            out_file = output_folder + f"/dock_{row.pdb}.csv"
+            if os.path.exists(out_file):
+                # print("Already ran glide for " + out_file)
+                continue
+
+            # print(f"Writing docking params to {in_file}")
+            with open(in_file, "w") as f:
+                f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_mae}
+DOCKING_METHOD mininplace
+"""
+                )
+
+            os.chdir(output_folder)
+            cmd = f"glide {in_file} -NOJOBID "
+            print(f"Running {cmd} from {os.path.abspath('.')}")
+            subprocess.run(cmd, shell=True, check=True)
+
+def dock_all(cfg, out_folder):
+
+    abs_path = os.path.abspath(".")
+    
+    for i, folder in enumerate(glob(get_bayesbind_struct_dir(cfg) + f"/*/*")):
+        df = pd.read_csv(folder + "/actives.csv")
+        for i, row in tqdm(df.iterrows(), total=len(df)):
+
+            os.chdir(abs_path)
+    
+            rec_file = folder + "/" + row.redock_rec_file
+            rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+            lig_file = folder + "/" + row.lig_crystal_file
+            lig_mae = out_folder + "/" + "/".join(lig_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+            cur_folder = "/".join(rec_mae.split("/")[:-1])
+            
+            gridfile = rec_mae.replace(".mae", "_grid.zip")
+            in_file = cur_folder + "/dock_" + row.pdb + ".in"
+            output_folder = cur_folder + "/" + row.pdb
+            os.makedirs(output_folder, exist_ok=True)
+
+            out_file = output_folder + f"/dock_{row.pdb}.csv"
+            if os.path.exists(out_file):
+                # print("Already ran glide for " + out_file)
+                continue
+
+            # print(f"Writing docking params to {in_file}")
+            with open(in_file, "w") as f:
+                f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_mae}
+DOCKING_METHOD mininplace
+"""
+                )
+
+            os.chdir(output_folder)
+            cmd = f"glide {in_file} -NOJOBID "
+            print(f"Running {cmd} from {os.path.abspath('.')}")
+            subprocess.run(cmd, shell=True, check=True)
+        #     break
+        # break
+            
+
+def single_grid_and_dock(out_folder, folder, force=True):
+    # AAAAA we did it wrong -- need to rerun this function
+    df = pd.read_csv(folder + "/actives.csv")
+    for i, row in tqdm(df.iterrows(), total=len(df)):
+        rec_file = folder + "/" + row.redock_rec_file
         rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
         cur_folder = "/".join(rec_mae.split("/")[:-1])
         os.makedirs(cur_folder, exist_ok=True)
         
-        gridfile = cur_folder + "/grid.zip"
-        in_file = cur_folder + "/grid.in"
-        df = pd.read_csv(folder + "/actives.csv")
-        row = df.iloc[0]
+        gridfile = rec_mae.replace(".mae", "_grid.zip")
+        in_file = rec_mae.replace(".mae", "_grid.in")
 
-        # inner box is X times the size of outer box
-        inner_scale = 0.5
 
-        print(f"Writing grid params to {in_file}")
-        with open(in_file, "w") as f:
-            f.write(
+        if not os.path.exists(gridfile) or not force:
+
+            # inner box is X times the size of outer box
+            inner_scale = 0.5
+
+            print(f"Writing grid params to {in_file}")
+            with open(in_file, "w") as f:
+                f.write(
 f"""INNERBOX {int(row.pocket_size_x*inner_scale)}, {int(row.pocket_size_y*inner_scale)},{int(row.pocket_size_z*inner_scale)}
 ACTXRANGE {row.pocket_size_x}
 ACTYRANGE {row.pocket_size_y}
@@ -84,82 +190,89 @@ GRID_CENTER {row.pocket_center_x}, {row.pocket_center_y}, {row.pocket_center_z}
 GRIDFILE {gridfile}
 RECEP_FILE {rec_mae}
 """
-            )
-        
-        cmd = f"glide {in_file}"
-        print(f"Running {cmd}")
-        subprocess.run(cmd, shell=True, check=True)
-
-def dock_all(cfg, out_folder):
-
-    abs_path = os.path.abspath(".")
-    
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-
-        split, poc = folder.split("/")[-2:]
-
-        os.chdir(abs_path)
-
-        rec_file = folder + "/rec.pdb"
-        rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-
-        cur_folder = "/".join(rec_mae.split("/")[:-1])
-        os.makedirs(cur_folder, exist_ok=True)
-
-        gridfile = cur_folder + "/grid.zip"
-
-
-        for prefix in ["actives", "random"]:
-
-            lig_file = cur_folder + "/" + prefix + ".mae"
-            in_file = cur_folder + "/dock_" + prefix + ".in"
-            output_folder = cur_folder + "/" + prefix + "_results"
-            os.makedirs(output_folder, exist_ok=True)
-
-            out_file = output_folder + f"/dock_{prefix}.csv"
-            if os.path.exists(out_file):
-                # print("Already ran glide for " + out_file)
-                continue
-
-            # print(f"Writing docking params to {in_file}")
-            with open(in_file, "w") as f:
-                f.write(
-f"""GRIDFILE {gridfile}
-LIGANDFILE {lig_file}
-"""
                 )
-
-            os.chdir(output_folder)
-            cmd = f"glide {in_file} -HOST {HOST} "
-            print(f"Running {cmd} from {os.path.abspath('.')}")
-            subprocess.run(cmd, shell=True, check=True)
-
-def glide_to_sdf(cfg, out_folder):
-
-    abs_path = os.path.abspath(".")
-    
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + "/*/*")):
-
-        os.chdir(abs_path)
-
-        rec_file = abs_path + "/" + folder + "/rec.pdb"
-        rec_mae = abs_path + "/" + out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-        cur_folder = "/".join(rec_mae.split("/")[:-1])
-        os.makedirs(cur_folder, exist_ok=True)
-
-        for prefix in ["actives", "random"]:
-            lig_file = cur_folder + "/" + prefix + ".sdf"
-            in_file = cur_folder + "/dock_" + prefix + ".in"
-            output_folder = cur_folder + "/" + prefix + "_results"
-
-            mae_file = output_folder + f"/{prefix}_pv.maegz"
-            if not os.path.exists(mae_file): continue
-            out_file = output_folder + f"/{prefix}_pv.sdf"
-            cmd = f"$SCHRODINGER/utilities/sdconvert -imae {mae_file} -osf {out_file}"
+            
+            cmd = f"glide {in_file}  -NOJOBID"
             print(f"Running {cmd}")
             subprocess.run(cmd, shell=True, check=True)
 
 
+        dock_in_file = cur_folder + "/dock_" + row.pdb + ".in"
+        output_folder = cur_folder + "/" + row.pdb
+        os.makedirs(output_folder, exist_ok=True)
+
+
+        lig_file = folder + "/" + row.lig_crystal_file
+        lig_mae = out_folder + "/" + "/".join(lig_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+
+        out_file = output_folder + f"/dock_{row.pdb}.csv"
+        if os.path.exists(out_file) and not force:
+            # print("Already ran glide for " + out_file)
+            continue
+
+        # print(f"Writing docking params to {in_file}")
+        with open(dock_in_file, "w") as f:
+            f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_mae}
+DOCKING_METHOD mininplace
+"""
+            )
+
+        os.chdir(output_folder)
+        cmd = f"glide {dock_in_file} -NOJOBID "
+        print(f"Running {cmd} from {os.path.abspath('.')}")
+        subprocess.run(cmd, shell=True, check=True)
+
+
+def grid_and_dock_all(cfg, out_folder):
+    folders = glob(get_bayesbind_struct_dir(cfg) + "/*/*")
+    with Pool(8) as p:
+        p.map(partial(single_grid_and_dock, out_folder), folders)
+
+def single_grid_and_dock_crossdock(cfg, out_folder, folder):
+    """ Crossdocks to the same rec mae file used by non-struct
+        BayesBind. A more accurate comparison """
+    split, pocket = folder.split("/")[-2:]
+    df = pd.read_csv(folder + "/actives.csv")
+    for i, row in tqdm(df.iterrows(), total=len(df)):
+
+        gridfile = get_baseline_dir(cfg, "glide", split, pocket) + "/grid.zip"
+
+        cur_folder = get_baseline_struct_dir(cfg, "glide", split, pocket)
+        dock_in_file = cur_folder + "/dock_" + row.pdb + "_crossdock.in"
+        output_folder = cur_folder + "/" + row.pdb + "_crossdock"
+        os.makedirs(output_folder, exist_ok=True)
+
+
+        lig_file = folder + "/" + row.lig_crystal_file
+        lig_mae = out_folder + "/" + "/".join(lig_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+
+        out_file = output_folder + f"/dock_{row.pdb}_crossdock.csv"
+        if os.path.exists(out_file):
+            # print("Already ran glide for " + out_file)
+            continue
+
+        # print(f"Writing docking params to {in_file}")
+        with open(dock_in_file, "w") as f:
+            f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_mae}
+DOCKING_METHOD mininplace
+"""
+            )
+
+        os.chdir(output_folder)
+        cmd = f"glide {dock_in_file} -NOJOBID "
+        print(f"Running {cmd} from {os.path.abspath('.')}")
+        subprocess.run(cmd, shell=True, check=True)
+
+def grid_and_dock_all_crossdock(cfg, out_folder):
+    folders = glob(get_bayesbind_struct_dir(cfg) + "/*/*")
+    with Pool(8) as p:
+        p.map(partial(single_grid_and_dock_crossdock, cfg, out_folder), folders)
 
 if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
@@ -173,9 +286,11 @@ if __name__ == "__main__":
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
     # prep_ligs(cfg, out_folder)
-    prep_recs(cfg, out_folder)
-    # finalize_rec_prep(cfg, out_folder)
+    # prep_recs(cfg, out_folder)
     # make_grids(cfg, out_folder)
-    # dock_all(cfg, out_folder)
-    # glide_to_sdf(cfg, out_folder)
+    grid_and_dock_all_crossdock(cfg, out_folder)
             
+    # for folder in glob(get_parent_baseline_dir(cfg) + "/glide/*/*"):
+    #     cmd = f"ls {folder}/*_crossdock"
+    #     print(cmd)
+    #     subprocess.run(cmd, shell=True, check=True)
