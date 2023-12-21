@@ -134,8 +134,6 @@ LIGANDFILE {lig_file}
 
 def dock_all_slurm(cfg, out_folder):
 
-    abs_path = os.path.abspath(".")
-    
     for prefix in ["actives", "random"]:
         print(f"Writing to {os.path.abspath(f'glide_{prefix}.sh')}")
         with open(f"glide_{prefix}.sh", "w") as f:
@@ -150,14 +148,11 @@ f"""#!/bin/bash
 #SBATCH --partition=general
 
 module load schrodinger
-cd {abs_path}
 
 """)
             for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
 
                 split, poc = folder.split("/")[-2:]
-
-                os.chdir(abs_path)
 
                 rec_file = folder + "/rec.pdb"
                 rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
@@ -185,11 +180,12 @@ LIGANDFILE {lig_file}
 """
                     )
 
-                os.chdir(output_folder)
                 cmd = f"glide {in_file}"
                 # print(f"Running {cmd} from {os.path.abspath('.')}")
+                f.write(f"cd {output_folder}\n")
                 f.write(cmd + "\n")
                 # subprocess.run(cmd, shell=True, check=True)
+            f.write("sleep 864000")
 
 def glide_to_sdf(cfg, out_folder):
 
