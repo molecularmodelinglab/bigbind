@@ -1577,7 +1577,8 @@ def make_bigbind_workflow(cfg):
 
     return Workflow(
         cfg,
-        saved_bayesbind_struct,
+        saved_bayesbind,
+        # saved_bayesbind_struct,
         # rf2pocketfile,
         # saved_act_unf,
         # plotted_prob_ratios,

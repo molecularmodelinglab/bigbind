@@ -10,6 +10,7 @@ import random
 
 from tqdm import tqdm
 from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
+from bigbind.add_seqres import add_seq_to_pdb
 from bigbind.similarity import LigSimilarity
 
 from utils.cfg_utils import get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_final_bayesbind_dir, get_output_dir
@@ -37,11 +38,19 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
 
     rec_cluster = poc_df.rec_cluster[0]
 
-
     for key in [ "ex_rec_file", "ex_rec_pdb", "ex_rec_pocket_file", "num_pocket_residues",
                  "pocket_center_x", "pocket_center_y", "pocket_center_z", 
                  "pocket_size_x", "pocket_size_y", "pocket_size_z" ]:
         poc_df[key] = poc_df[key][0]
+
+    rec_file = get_output_dir(cfg) + "/" + poc_df.ex_rec_file[0]
+    rec_pdb = poc_df.ex_rec_pdb[0]
+    add_seq_to_pdb(rec_file, rec_pdb, folder + "/rec.pdb")
+    
+    # add Hs and residues for MD-ready rec files
+    pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues"
+    print(f"Running: {pdb_fix_cmd}")
+    subprocess.run(pdb_fix_cmd, shell=True, check=True)
 
     # poc_df.to_csv(folder + "/activities.csv", index=False)
 
@@ -66,9 +75,9 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
     shutil.copyfile(rec_file_nofix, folder + "/rec_nofix.pdb")
 
     # todo: put this in the main bigbind code!
-    pdb_fix_cmd = f"pdbfixer {folder}/rec_nofix.pdb --output {folder}/rec.pdb --add-atoms=heavy --add-residues"
-    print(f"Running: {pdb_fix_cmd}")
-    subprocess.run(pdb_fix_cmd, shell=True, check=True)
+    # pdb_fix_cmd = f"pdbfixer {folder}/rec_nofix.pdb --output {folder}/rec.pdb --add-atoms=heavy --add-residues"
+    # print(f"Running: {pdb_fix_cmd}")
+    # subprocess.run(pdb_fix_cmd, shell=True, check=True)
 
     poc_file = get_output_dir(cfg) + "/" + poc_df.ex_rec_pocket_file[0]
     shutil.copyfile(poc_file, folder + "/pocket.pdb")
@@ -145,9 +154,9 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
 
 
 # force this!
-@task()
+@task(force=False)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
-    shutil.rmtree(get_bayesbind_dir(cfg))
+    # shutil.rmtree(get_bayesbind_dir(cfg))
 
     print("Saving BayesBind set to {}".format(get_bayesbind_dir(cfg)))
 
@@ -166,6 +175,10 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
     os.makedirs(folder, exist_ok=True)
 
     bayesbind_folder = get_bayesbind_dir(cfg) + f"/{split}/{pocket}"
+
+    shutil.copyfile(bayesbind_folder + "/rec.pdb", folder + "/rec.pdb")
+    shutil.copyfile(bayesbind_folder + "/rec_hs.pdb", folder + "/rec_hs.pdb")
+    shutil.copyfile(bayesbind_folder + "/pocket.pdb", folder + "/pocket.pdb")
 
     poc_df = struct_df.query(f"pocket == '{pocket}'").reset_index(drop=True)
     poc_df.lig_crystal_file = poc_df.lig_crystal_file.str.split("/").str[-1]
@@ -190,7 +203,6 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
 
     poc_df.to_csv(folder + "/actives_no_cluster.csv", index=False)
 
-    shutil.copyfile(bayesbind_folder + "/rec.pdb", folder + "/rec.pdb")
     for lig_file, rec_file, cd_rec_file in zip(poc_df.lig_crystal_file, poc_df.redock_rec_file, poc_df.crossdock_rec_file):
         shutil.copyfile(get_output_dir(cfg) + f"/{pocket}/{lig_file}", folder + f"/{lig_file}")
         shutil.copyfile(get_output_dir(cfg) + f"/{pocket}/{rec_file}", folder + f"/{rec_file}")
@@ -203,7 +215,7 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
     shutil.copyfile(bayesbind_folder + "/random.smi", folder + "/random.smi")
 
 
-@task(force=True)
+@task(force=False)
 def make_all_bayesbind_struct(cfg, saved_bayesbind, cluster_cutoff=8, act_cutoff=5):
 
     struct_dfs = {

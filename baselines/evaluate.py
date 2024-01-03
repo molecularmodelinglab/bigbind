@@ -12,51 +12,36 @@ from tqdm import tqdm, trange
 from rdkit.Chem import PandasTools
 from baselines.eef import calc_best_eef, calc_eef
 from baselines.knn import get_all_bayesbind_knn_preds
-from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
+from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets, get_all_bayesbind_struct_splits_and_pockets
 from baselines.banana import run_all_banana
 
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config
+from utils.cfg_utils import get_baseline_dir, get_baseline_struct_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config
 from utils.task import task
 from utils.workflow import Workflow
 
-ignore_pockets = { "AL1A1_HUMAN_4_501_0", "ESR1_HUMAN_300_553_0", "CBP_HUMAN_1079_1197_0" }
-_valid_indexes = None
-def get_all_valid_indexes(cfg):
-    """ Alas, we created the bayesbind set (and docked everything) before realizing
-    that we need to remove all potency (HTS) values from the activities. So now
-    we postprocess everything smh"""
-    global _valid_indexes
-    if _valid_indexes is not None:
-        return _valid_indexes
-    
-    _valid_indexes = {}
-    for split, pocket in get_all_bayesbind_splits_and_pockets(cfg):
-        if pocket in ignore_pockets:
-            continue
-        df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/actives.csv")
-        if len(df.query("standard_type != 'Potency' and pchembl_value > 5")) > 30:
-            _valid_indexes[pocket] = df.query("standard_type != 'Potency'").index
-    return _valid_indexes
-
+MAX_LIGANDS = 1000
 def postprocess_preds(cfg, preds):
     """ Postprocess predictions on old (including potency) bayesbind set so that
     they now only predict non-potency values """
-    valid_indexes = get_all_valid_indexes(cfg)
     ret = {}
     for pocket in preds:
-        if pocket in valid_indexes:
-            ret[pocket] = {}
-            ret[pocket]["random"] = preds[pocket]["random"]
-            ret[pocket]["actives"] = preds[pocket]["actives"][valid_indexes[pocket]]
+        ret[pocket] = {}
+        ret[pocket]["random"] = preds[pocket]["random"][:MAX_LIGANDS]
+        ret[pocket]["actives"] = preds[pocket]["actives"][:MAX_LIGANDS]
     return ret
 
 def get_all_bayesbind_activities(cfg):
-    valid_indexes = get_all_valid_indexes(cfg)
     poc2activities = {}
     for folder in glob(get_bayesbind_dir(cfg) + "/*/*"):
         pocket = folder.split("/")[-1]
-        if pocket in valid_indexes:
-            poc2activities[pocket] = pd.read_csv(folder + "/actives.csv").pchembl_value[valid_indexes[pocket]]
+        poc2activities[pocket] = pd.read_csv(folder + "/actives.csv").pchembl_value[:MAX_LIGANDS]
+    return poc2activities
+
+def get_all_bayesbind_struct_activities(cfg):
+    poc2activities = {}
+    for folder in glob(get_bayesbind_struct_dir(cfg) + "/*/*"):
+        pocket = folder.split("/")[-1]
+        poc2activities[pocket] = pd.read_csv(folder + "/actives.csv").pchembl_value[:MAX_LIGANDS]
     return poc2activities
 
 def get_all_metrics(cfg, predictions, act_cutoff=5, N=None, frac=None):
@@ -131,6 +116,16 @@ def get_glide_scores(df, num_compounds):
         ret[og_index[i]] = max(-df.r_i_docking_score[i], ret[og_index[i]])
     return ret
 
+def get_glide_rand_score(cfg, split, pocket):
+    folder = get_baseline_dir(cfg, "glide", split, pocket)
+    rand_csv = f"{folder}/random_results/dock_random.csv"
+    true_rand_df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/random.csv")
+    if os.path.exists(rand_csv):
+        rand_df = pd.read_csv(rand_csv)
+        return get_glide_scores(rand_df, len(true_rand_df))
+    else:
+        raise ValueError(f"Missing {split} {pocket} {os.path.exists(rand_csv)}")
+
 @task(force=False)
 def get_all_glide_scores(cfg):
     preds = {}
@@ -150,13 +145,53 @@ def get_all_glide_scores(cfg):
             print(f"Missing {split} {pocket} {os.path.exists(act_csv)} {os.path.exists(rand_csv)} {len(true_act_df)}")
     return preds
 
+@task(force=False)
+def get_all_glide_scores_struct(cfg):
+    preds = {}
+    for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
+        folder = get_baseline_struct_dir(cfg, "glide", split, pocket)
+        true_act_df = pd.read_csv(get_bayesbind_struct_dir(cfg) + f"/{split}/{pocket}/actives.csv")
+        scores = []
+        for pdb in true_act_df.pdb:
+            csv = f"{folder}/{pdb}_crossdock/dock_{pdb}_crossdock.csv"
+            df = pd.read_csv(csv)
+            if len(df) > 0:
+                scores.append(-df.r_i_docking_score.min())
+            else:
+                scores.append(-1000)
+        preds[pocket] = {
+            "actives": scores,
+            "random": get_glide_rand_score(cfg, split, pocket)
+        }
+    return preds
+
+@task(force=False)
+def get_all_glide_scores_struct_redock(cfg):
+    preds = {}
+    for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
+        folder = get_baseline_struct_dir(cfg, "glide", split, pocket)
+        true_act_df = pd.read_csv(get_bayesbind_struct_dir(cfg) + f"/{split}/{pocket}/actives.csv")
+        scores = []
+        for pdb in true_act_df.pdb:
+            csv = f"{folder}/{pdb}/dock_{pdb}.csv"
+            df = pd.read_csv(csv)
+            if len(df) > 0:
+                scores.append(-df.r_i_docking_score.min())
+            else:
+                scores.append(-1000)
+        preds[pocket] = {
+            "actives": scores,
+            "random": get_glide_rand_score(cfg, split, pocket)
+        }
+    return preds
+
 def get_baseline_workflow(cfg):
     return Workflow(cfg,
                     get_all_bayesbind_knn_preds(),
                     get_all_vina_scores(),
-                    get_all_gnina_scores(),
+                    # get_all_gnina_scores(),
                     get_all_glide_scores(),
-                    run_all_banana(),
+                    # run_all_banana(),
     )
 
 def get_results_df(cfg):
@@ -169,9 +204,10 @@ def get_results_df(cfg):
     model_preds = {
         "KNN": all_preds[0],
         "Vina": all_preds[1],
-        "GNINA": all_preds[2],
-        "Glide": all_preds[3],
-        "BANANA": all_preds[4],
+        "Glide": all_preds[2],
+        # "GNINA": all_preds[2],
+        # "Glide": all_preds[3],
+        # "BANANA": all_preds[4],
     }
     poc2activities = get_all_bayesbind_activities(cfg)
 
@@ -297,10 +333,13 @@ def eval_results(cfg):
         row_str += " \\\\"
         print(row_str)
 
+
+    # model_order = ["KNN", "Vina", "GNINA", "Glide", "BANANA"]
+    model_order = ["Vina", "Glide"]
+
     # save the summary figures
     fracs = ["max"]
     for frac in fracs:
-        model_order = ["KNN", "Vina", "GNINA", "Glide", "BANANA"]
 
         p_eef = all_results.pivot(index="Target", columns="Model", values=f"EEF_{frac}").loc[knn_order][model_order]
         p_low = all_results.pivot(index="Target", columns="Model", values=f"EEF_{frac}_low").loc[knn_order][model_order]
@@ -343,8 +382,6 @@ def eval_results(cfg):
     for ax, frac in zip(axes, fracs):
         first = frac == fracs[0]
         last = frac == fracs[-1]
-
-        model_order = ["KNN", "Vina", "GNINA", "Glide", "BANANA"]
 
         p_eef = all_results.pivot(index="Target", columns="Model", values=f"EEF_{frac}").loc[knn_order][model_order]
         p_low = all_results.pivot(index="Target", columns="Model", values=f"EEF_{frac}_low").loc[knn_order][model_order]
