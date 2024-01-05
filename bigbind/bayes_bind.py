@@ -48,7 +48,7 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
     add_seq_to_pdb(rec_file, rec_pdb, folder + "/rec.pdb")
     
     # add Hs and residues for MD-ready rec files
-    pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues"
+    pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues --keep-heterogens=none"
     print(f"Running: {pdb_fix_cmd}")
     subprocess.run(pdb_fix_cmd, shell=True, check=True)
 
@@ -154,7 +154,7 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
 
 
 # force this!
-@task(force=False)
+@task(force=True)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
     # shutil.rmtree(get_bayesbind_dir(cfg))
 
@@ -179,6 +179,8 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
     shutil.copyfile(bayesbind_folder + "/rec.pdb", folder + "/rec.pdb")
     shutil.copyfile(bayesbind_folder + "/rec_hs.pdb", folder + "/rec_hs.pdb")
     shutil.copyfile(bayesbind_folder + "/pocket.pdb", folder + "/pocket.pdb")
+
+    return
 
     poc_df = struct_df.query(f"pocket == '{pocket}'").reset_index(drop=True)
     poc_df.lig_crystal_file = poc_df.lig_crystal_file.str.split("/").str[-1]
@@ -215,7 +217,7 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
     shutil.copyfile(bayesbind_folder + "/random.smi", folder + "/random.smi")
 
 
-@task(force=False)
+@task(force=True)
 def make_all_bayesbind_struct(cfg, saved_bayesbind, cluster_cutoff=8, act_cutoff=5):
 
     struct_dfs = {

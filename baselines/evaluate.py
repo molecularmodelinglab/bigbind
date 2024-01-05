@@ -185,6 +185,54 @@ def get_all_glide_scores_struct_redock(cfg):
         }
     return preds
 
+@task(force=True)
+def get_all_glide_scores_min(cfg):
+    preds = {}
+    for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
+        folder = get_baseline_struct_dir(cfg, "glide", split, pocket)
+        true_act_df = pd.read_csv(get_bayesbind_struct_dir(cfg) + f"/{split}/{pocket}/actives.csv")
+        scores = []
+        for pdb in true_act_df.pdb:
+            csv = f"{folder}/{pdb}_min/dock_{pdb}_min.csv"
+            if not os.path.exists(csv):
+                scores.append(-1000)
+                continue
+            df = pd.read_csv(csv)
+            if len(df) > 0:
+                scores.append(-df.r_i_docking_score.min())
+            else:
+                scores.append(-1000)
+        preds[pocket] = {
+            "actives": scores,
+            "random": get_glide_rand_score(cfg, split, pocket)
+        }
+    return preds
+
+@task(force=True)
+def get_all_glide_scores_full_min(cfg):
+    preds = {}
+    for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
+        folder = get_baseline_struct_dir(cfg, "glide", split, pocket)
+        true_act_df = pd.read_csv(get_bayesbind_struct_dir(cfg) + f"/{split}/{pocket}/actives.csv")
+        scores = []
+        for pdb in true_act_df.pdb:
+            csv = f"{folder}/{pdb}_full_min/dock_{pdb}_full_min.csv"
+            if not os.path.exists(csv):
+                scores.append(-1000)
+                continue
+            df = pd.read_csv(csv)
+            if len(df) > 0:
+                scores.append(-df.r_i_docking_score.min())
+            else:
+                scores.append(-1000)
+        preds[pocket] = {
+            "actives": scores,
+            "random": get_glide_rand_score(cfg, split, pocket)
+        }
+    return preds
+
+
+
 def get_baseline_workflow(cfg):
     return Workflow(cfg,
                     get_all_bayesbind_knn_preds(),

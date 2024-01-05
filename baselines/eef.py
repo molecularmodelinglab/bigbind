@@ -90,4 +90,6 @@ def calc_best_eef(preds, true_act, act_cutoff):
         eef, low, high, pval = calc_eef(preds["actives"], preds["random"], true_act, act_cutoff, select_frac=cur_frac)
         if cur_best is None or eef > cur_best[0]:
             cur_best = (eef, high, low, pval, cur_frac, cur_N)
+        # if cur_best is None or low > cur_best[1]:
+        #     cur_best = (eef, high, low, pval, cur_frac, cur_N)
     return cur_best
