@@ -21,7 +21,7 @@ def get_morgan_fps(cfg, df, radius=3, bits=2048):
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, useChirality=True, radius=radius, nBits=bits)
         fps.append(np.array(fp, dtype=bool))
     fps = np.asarray(fps)
-
+    return fps
 
 def get_fp(smi, radius=4, bits=2048):
     mol = Chem.MolFromSmiles(smi)

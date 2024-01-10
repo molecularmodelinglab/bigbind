@@ -17,6 +17,11 @@ def get_bayesbind_struct_dir(cfg):
     os.makedirs(ret, exist_ok=True)
     return ret
 
+def get_bayesbind_small_dir(cfg):
+    ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "bayesbind_small")
+    os.makedirs(ret, exist_ok=True)
+    return ret
+
 def get_final_bayesbind_dir(cfg):
     ret = os.path.join(cfg.host.work_dir, cfg.run_name, "global", "BayesBindV1")
     os.makedirs(ret, exist_ok=True)

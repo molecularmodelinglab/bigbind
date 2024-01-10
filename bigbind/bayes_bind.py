@@ -7,6 +7,7 @@ from omegaconf import OmegaConf
 import os
 import shutil
 import random
+from rdkit import Chem
 
 from tqdm import tqdm
 from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
@@ -180,8 +181,6 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
     shutil.copyfile(bayesbind_folder + "/rec_hs.pdb", folder + "/rec_hs.pdb")
     shutil.copyfile(bayesbind_folder + "/pocket.pdb", folder + "/pocket.pdb")
 
-    return
-
     poc_df = struct_df.query(f"pocket == '{pocket}'").reset_index(drop=True)
     poc_df.lig_crystal_file = poc_df.lig_crystal_file.str.split("/").str[-1]
     poc_df.redock_rec_file = poc_df.redock_rec_file.str.split("/").str[-1]
@@ -202,6 +201,21 @@ def make_bayesbind_struct_dir(cfg, split, pocket, struct_df):
 
     save_smiles(folder + "/actives.smi", clustered_df.lig_smiles)
     save_smiles(folder + "/actives_no_cluster.smi", poc_df.lig_smiles)
+
+    writer = Chem.SDWriter(folder + "/actives.sdf")
+    for lig_file in clustered_df.lig_crystal_file:
+        lf = get_output_dir(cfg) + f"/{pocket}/{lig_file}"
+        mol = Chem.SDMolSupplier(lf)[0]
+        writer.write(mol)
+    writer.close()
+
+    writer = Chem.SDWriter(folder + "/actives_no_cluster.sdf")
+    for lig_file in poc_df.lig_crystal_file:
+        lf = get_output_dir(cfg) + f"/{pocket}/{lig_file}"
+        mol = Chem.SDMolSupplier(lf)[0]
+        writer.write(mol)
+    writer.close()
+
 
     poc_df.to_csv(folder + "/actives_no_cluster.csv", index=False)
 

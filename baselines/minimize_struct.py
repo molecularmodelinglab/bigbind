@@ -2,11 +2,11 @@ from glob import glob
 import os
 import sys
 import openff
+from openff.units.openmm import to_openmm
 import openmm as mm
 from openmm import app
 from openmm import unit
 from openmmforcefields.generators import EspalomaTemplateGenerator
-from openff.toolkit.topology import Molecule
 from openff.toolkit.topology import Molecule
 import pandas as pd
 from tqdm import tqdm, trange
@@ -14,7 +14,7 @@ from tqdm import tqdm, trange
 from baselines.vina_gnina import get_all_bayesbind_struct_splits_and_pockets
 from utils.cfg_utils import get_baseline_struct_dir, get_bayesbind_struct_dir, get_config
 
-def minimize_protein(prot, lig, out_file, include_lig=False, force=False):
+def minimize_protein(prot, lig, out_file, freeze_alpha=True, anneal=False, include_lig=False, force=False):
 
     if os.path.exists(out_file) and not force:
         return
@@ -23,19 +23,16 @@ def minimize_protein(prot, lig, out_file, include_lig=False, force=False):
     prot_pdb = app.PDBFile(prot)
     modeller.add(prot_pdb.topology, prot_pdb.positions)
 
-    lig_pdb = app.PDBFile(lig)
-    modeller.add(lig_pdb.topology, lig_pdb.positions)
+    lig_sdf = Molecule.from_file(lig)
+    if isinstance(lig_sdf, list):
+        lig_sdf = lig_sdf[0]
+
+    modeller.add(lig_sdf.to_topology().to_openmm(), to_openmm(lig_sdf.conformers[0]))
 
     topology = modeller.topology
     positions = modeller.positions
 
-
-    lig_sdf_file = lig.replace(".pdb", ".sdf").replace("_pv", "_pv_split")
-    if not os.path.exists(lig_sdf_file):
-        print("No SDF file found")
-        return
-
-    mols = [ Molecule.from_file(lig_sdf_file) ]
+    mols = [ lig_sdf ]
     # system_generator = SystemGenerator(forcefields=ffs, small_molecule_forcefield='gaff-2.11', molecules=mols, forcefield_kwargs=forcefield_kwargs, cache='db.json')
     # system = system_generator.create_system(topology)
 
@@ -45,11 +42,11 @@ def minimize_protein(prot, lig, out_file, include_lig=False, force=False):
     system = forcefield.createSystem(topology)
 
     residues = list(topology.residues())
-    # make alpha carbons extra heavy
-    # for r in residues:
-    #     for atom in r.atoms():
-    #         if atom.name == "CA":
-    #             system.setParticleMass(atom.index, 200*unit.amu)
+    if freeze_alpha:
+        for r in residues:
+            for atom in r.atoms():
+                if atom.name == "CA":
+                    system.setParticleMass(atom.index, 0*unit.amu)
 
     platform = mm.Platform.getPlatformByName('CUDA')
     # integrator = mm.VerletIntegrator(0.001*unit.picoseconds)
@@ -58,26 +55,27 @@ def minimize_protein(prot, lig, out_file, include_lig=False, force=False):
     context = simulation.context
     context.setPositions(positions)
 
-    print(f"Initial energy: {context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilocalorie_per_mole)} kcal/mol")
+    # print(f"Initial energy: {context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilocalorie_per_mole)} kcal/mol")
     simulation.minimizeEnergy()
 
     state = context.getState(getPositions=True, getEnergy=True)
     U = state.getPotentialEnergy()
-    print(f"Minimized energy: {U.value_in_unit(unit.kilocalorie_per_mole)} kcal/mol")
+    # print(f"Minimized energy: {U.value_in_unit(unit.kilocalorie_per_mole)} kcal/mol")
     positions = state.getPositions(asNumpy=True)
 
-    NITER = 50
-    Tmax = 100*unit.kelvin
-    T = Tmax
-    t = trange(NITER)
-    for i in t:
-        T = T*0.95
-        integrator.setTemperature((NITER-i)*Tmax/NITER)
-        simulation.step(1000)
-        state = context.getState(getPositions=True, getEnergy=True)
-        U = state.getPotentialEnergy()
-        t.set_description(f"T: {T.value_in_unit(unit.kelvin):0.2f}K, U: {U.value_in_unit(unit.kilocalorie_per_mole):0.2f} kcal/mol")
-        positions = state.getPositions(asNumpy=True)
+    if anneal:
+        NITER = 50
+        Tmax = 100*unit.kelvin
+        T = Tmax
+        t = trange(NITER)
+        for i in t:
+            T = T*0.95
+            integrator.setTemperature((NITER-i)*Tmax/NITER)
+            simulation.step(1000)
+            state = context.getState(getPositions=True, getEnergy=True)
+            U = state.getPotentialEnergy()
+            t.set_description(f"T: {T.value_in_unit(unit.kelvin):0.2f}K, U: {U.value_in_unit(unit.kilocalorie_per_mole):0.2f} kcal/mol")
+            positions = state.getPositions(asNumpy=True)
 
 
     if include_lig:

@@ -145,7 +145,7 @@ def get_all_glide_scores(cfg):
             print(f"Missing {split} {pocket} {os.path.exists(act_csv)} {os.path.exists(rand_csv)} {len(true_act_df)}")
     return preds
 
-@task(force=False)
+@task(force=True)
 def get_all_glide_scores_struct(cfg):
     preds = {}
     for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
@@ -154,6 +154,9 @@ def get_all_glide_scores_struct(cfg):
         scores = []
         for pdb in true_act_df.pdb:
             csv = f"{folder}/{pdb}_crossdock/dock_{pdb}_crossdock.csv"
+            if not os.path.exists(csv):
+                scores.append(-1000)
+                continue
             df = pd.read_csv(csv)
             if len(df) > 0:
                 scores.append(-df.r_i_docking_score.min())
