@@ -1,6 +1,7 @@
 
 import os
 import shutil
+import subprocess
 import sys
 import numpy as np
 import networkx as nx
@@ -59,7 +60,6 @@ def make_bayesbind_small_dir(cfg, split, pocket, scores):
     shutil.copy(bb_folder + "/rec.pdb", out_folder + "/rec.pdb")
     shutil.copy(bb_folder + "/rec_hs.pdb", out_folder + "/rec_hs.pdb")
 
-
     # choose a single ligand from each cluster (up to NUM_ACT)
     chosen = []
     for component in components[:NUM_ACT]:
@@ -69,22 +69,36 @@ def make_bayesbind_small_dir(cfg, split, pocket, scores):
     
     df.to_csv(out_folder + "/actives.csv", index=False)
 
+    # save all the chosen crysal rec files
+    for rec_file in df.redock_rec_file:
+        shutil.copy(bb_folder + f"/{rec_file}", out_folder + f"/{rec_file}")
+        pdb_fix_cmd = f"pdbfixer {out_folder}/{rec_file} --output {out_folder}/{rec_file.replace('.pdb', '_hs.pdb')} --add-atoms=all --add-residues --keep-heterogens=none"
+        print(f"Running: {pdb_fix_cmd}")
+        subprocess.run(pdb_fix_cmd, shell=True, check=True)
+
     # save indexes of actives
     np.savetxt(out_folder + "/actives_indexes.txt", df.index.values, fmt="%d")
 
-    writer = Chem.SDWriter(out_folder + "/actives.sdf")
+    act_noh_fname = out_folder + "/actives_noh.sdf"
+    act_fname = out_folder + "/actives.sdf"
+
+    writer = Chem.SDWriter(act_noh_fname)
     for lig_file in df.lig_crystal_file:
         lf = get_output_dir(cfg) + f"/{pocket}/{lig_file}"
         mol = Chem.SDMolSupplier(lf)[0]
         writer.write(mol)
     writer.close()
 
+    # protonate the actives properly!
+    cmd = f"obabel -isd {act_noh_fname} -osd -O {act_fname} -p 7"
+    subprocess.run(cmd, shell=True, check=True)
+
     rand_folder = get_baseline_dir(cfg, RAND_DOCK_METHOD, split, pocket) + "/random_results"
     rand_mols = []
     for i in range(10000):
         lf = rand_folder + f"/{i}.sdf"
         if os.path.exists(lf):
-            mol = Chem.SDMolSupplier(lf)[0]
+            mol = Chem.SDMolSupplier(lf, removeHs=False)[0]
             rand_mols.append(mol)
         if len(rand_mols) >= NUM_RAND:
             break
