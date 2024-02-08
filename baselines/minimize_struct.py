@@ -64,18 +64,17 @@ def minimize_protein(prot, lig, out_file, freeze_alpha=True, anneal=False, inclu
     positions = state.getPositions(asNumpy=True)
 
     if anneal:
-        NITER = 50
-        Tmax = 100*unit.kelvin
+        Tmax = 1000*unit.kelvin
+        n_iter = 1000
         T = Tmax
-        t = trange(NITER)
+        t = trange(n_iter)
         for i in t:
-            T = T*0.95
-            integrator.setTemperature((NITER-i)*Tmax/NITER)
+            T = (n_iter-i)*Tmax/n_iter
+            integrator.setTemperature(T)
             simulation.step(1000)
-            state = context.getState(getPositions=True, getEnergy=True)
+            state = simulation.context.getState(getEnergy=True)
             U = state.getPotentialEnergy()
             t.set_description(f"T: {T.value_in_unit(unit.kelvin):0.2f}K, U: {U.value_in_unit(unit.kilocalorie_per_mole):0.2f} kcal/mol")
-            positions = state.getPositions(asNumpy=True)
 
 
     if include_lig:

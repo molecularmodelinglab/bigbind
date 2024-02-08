@@ -16,8 +16,8 @@ from rdkit.Chem import PandasTools
 from tqdm import tqdm
 from baselines.minimize_struct import minimize_protein
 
-from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config
+from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets, get_all_bayesbind_struct_splits_and_pockets
+from utils.cfg_utils import get_baseline_dir, get_baseline_struct_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config
 
 
 def clean_glide_outputs(smi_file, docked_mae, out_folder, max_ligands=None):
@@ -26,7 +26,8 @@ def clean_glide_outputs(smi_file, docked_mae, out_folder, max_ligands=None):
     {output_folder}/results.csv and saves the numbered sdf files to the
     folder as well. E.g. 1.sdf, 2.sdf, etc.
     
-    :param smi_file: smi file we gave to glide for input
+    :param smi_file: smi file we gave to glide for input. This can
+        also be a list of smiles
     :param docked_mae: mae file output by glide
     :param out_folder: folder to put the cleaned outputs in
     :param max_ligands: The number of ligands we actually docked 
@@ -45,24 +46,32 @@ def clean_glide_outputs(smi_file, docked_mae, out_folder, max_ligands=None):
     df = PandasTools.LoadSDF(big_sdf, removeHs=False)
 
     # load in the smiles
-    og_smiles = []
-    with open(smi_file, "r") as f:
-        for line in f:
-            og_smiles.append(line.strip())
-    if max_ligands is not None:
-        og_smiles = og_smiles[:max_ligands]
+    if isinstance(smi_file, list):
+        og_smiles = smi_file
+    else:
+        og_smiles = []
+        with open(smi_file, "r") as f:
+            for line in f:
+                og_smiles.append(line.strip())
+        if max_ligands is not None:
+            og_smiles = og_smiles[:max_ligands]
 
     scores = np.zeros(len(og_smiles)) - 10000
     filenames = [None for _ in range(len(og_smiles))]
 
     # save individual sdf files
     scores_and_mols = defaultdict(list)
-
     for i, row in df.iterrows():
         # first row is the rec structure
         if i == 0: continue
         mol = row.ROMol
-        og_index = int(row.s_lp_Variant.split(":")[-1].split("-")[0]) - 1
+
+        # sometimes I'm docking things with only one ligand and without
+        # any lig prep...
+        if len(og_smiles) == 1:
+            og_index = 0
+        else:
+            og_index = int(row.s_lp_Variant.split(":")[-1].split("-")[0]) - 1
 
         filename = f"{og_index}.sdf"
         filenames[og_index] = filename
@@ -269,11 +278,72 @@ def minimize_all_glide_structs(cfg):
             print_exc()
             continue
 
+def make_glide_good_struct(cfg):
+    """Coalesce the glide results into a much nice form factor """
+
+    for split, pocket in get_all_bayesbind_struct_splits_and_pockets(cfg):
+        bb_struct_dir = f"{get_bayesbind_struct_dir(cfg)}/{split}/{pocket}"
+        bb_dir = f"{get_bayesbind_dir(cfg)}/{split}/{pocket}"
+        glide_dir =f"{get_baseline_struct_dir(cfg, 'glide', split, pocket)}"
+        glide_nostruct_dir =f"{get_baseline_dir(cfg, 'glide', split, pocket)}"
+        glide_good_dir = f"{get_baseline_struct_dir(cfg, 'glide_good', split, pocket)}"
+
+        act_df = pd.read_csv(f"{bb_struct_dir}/actives.csv")
+        random_df = pd.read_csv(f"{bb_dir}/random.csv")
+
+        # move the rec files over
+        for fname in ["pocket.pdb", "rec.pdb", "rec_hs.pdb"]:
+            shutil.copyfile(f"{bb_struct_dir}/{fname}", f"{glide_good_dir}/{fname}")
+
+        mols = []
+        scores = []
+
+        for smi, pdb in zip(tqdm(act_df.lig_smiles), act_df.pdb):
+            pdb_dir = f"{glide_dir}/{pdb}_crossdock"
+
+            out_dir = f"{pdb_dir}/cleaned"
+            docked_mae = f"{pdb_dir}/dock_{pdb}_crossdock_pv.maegz"
+            if os.path.exists(docked_mae):
+                clean_glide_outputs([smi], docked_mae, out_dir, MAX_LIGANDS)
+                
+                score_df = pd.read_csv(f"{out_dir}/results.csv")
+                docked_sdf = f"{out_dir}/0.sdf"
+                mols.append(Chem.SDMolSupplier(docked_sdf, removeHs=False)[0])
+                scores.append(score_df.score[0])
+            else:
+                scores.append(-1000)
+
+        out_active_sdf = f"{glide_good_dir}/actives.sdf"
+        writer = Chem.SDWriter(out_active_sdf)
+        for mol in mols:
+            writer.write(mol)
+        writer.close()
+
+        act_df['score'] = scores
+        act_df.to_csv(f"{glide_good_dir}/actives.csv", index=False)
+
+        # now for random -- easier
+        scores = pd.read_csv(f"{glide_nostruct_dir}/random_results/results.csv").score
+        mols = []
+        for i in range(len(scores)):
+            docked_fname = f"{glide_nostruct_dir}/random_results/{i}.sdf"
+            if os.path.exists(docked_fname):
+                mols.append(Chem.SDMolSupplier(docked_fname, removeHs=False)[0])
+        
+        out_random_sdf = f"{glide_good_dir}/random.sdf"
+        writer = Chem.SDWriter(out_random_sdf)
+        for mol in mols:
+            writer.write(mol)
+
+        random_df['score'] = scores
+        random_df.to_csv(f"{glide_good_dir}/random.csv", index=False)
+
 if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
     # clean_all_glide_results(cfg)
-    convert_glide_min_ligs(cfg)
-    minimize_all_glide_structs(cfg)
-    convert_glide_min_recs(cfg)
-    create_all_gridfiles(cfg)
-    dock_all_minimized(cfg)
+    make_glide_good_struct(cfg)
+    # convert_glide_min_ligs(cfg)
+    # minimize_all_glide_structs(cfg)
+    # convert_glide_min_recs(cfg)
+    # create_all_gridfiles(cfg)
+    # dock_all_minimized(cfg)

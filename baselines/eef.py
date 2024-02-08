@@ -74,7 +74,8 @@ def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_frac):
 
 def calc_best_eef(preds, true_act, act_cutoff):
     """ Compute the best possible EEF from the predictions.
-    Returns a tuple (EEF, low, high, fraction selected, N (1/fraction selection)) """
+    Returns a tuple (EEF, low, high, fraction selected, N (1/fraction selection))
+    This returns the EEF with the highest lower bound. """
 
     cur_best = None
     seen_fracs = set()
@@ -88,8 +89,8 @@ def calc_best_eef(preds, true_act, act_cutoff):
         seen_fracs.add(cur_frac)
         cur_N = int(round(1/cur_frac))
         eef, low, high, pval = calc_eef(preds["actives"], preds["random"], true_act, act_cutoff, select_frac=cur_frac)
-        if cur_best is None or eef > cur_best[0]:
-            cur_best = (eef, high, low, pval, cur_frac, cur_N)
-        # if cur_best is None or low > cur_best[1]:
-        #     cur_best = (eef, high, low, pval, cur_frac, cur_N)
+        # if cur_best is None or eef > cur_best[0]:
+        #     cur_best = (eef, low, high, pval, cur_frac, cur_N)
+        if cur_best is None or low > cur_best[1]:
+            cur_best = (eef, low, high, pval, cur_frac, cur_N)
     return cur_best

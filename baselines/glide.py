@@ -30,7 +30,7 @@ def prep_ligs(cfg, out_folder):
 
             
             # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
-            cmd = f"ligprep -ismi {out_smi_file} -omae {out_file}"
+            cmd = f"ligprep -ismi {out_smi_file} -omae {out_file} -i 2"
             print("Running " + cmd)
             subprocess.run(cmd, shell=True, check=True)
         # break
@@ -227,11 +227,11 @@ if __name__ == "__main__":
     # if not os.path.exists("baseline_data"):
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
-    # prep_ligs(cfg, out_folder)
-    # prep_recs(cfg, out_folder)
-    # finalize_rec_prep(cfg, out_folder)
-    # make_grids(cfg, out_folder)
+    prep_ligs(cfg, out_folder)
+    prep_recs(cfg, out_folder)
+    finalize_rec_prep(cfg, out_folder)
+    make_grids(cfg, out_folder)
     # dock_all(cfg, out_folder)
-    dock_all_slurm(cfg, out_folder)
+    # dock_all_slurm(cfg, out_folder)
     # glide_to_sdf(cfg, out_folder)
             
