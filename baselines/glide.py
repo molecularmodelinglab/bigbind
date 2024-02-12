@@ -35,26 +35,23 @@ def prep_ligs(cfg, out_folder):
             subprocess.run(cmd, shell=True, check=True)
         # break
 
-def prep_recs(cfg, out_folder):
+def prep_recs(cfg, out_folder, force=False):
     """ Run prepwizard on all the rec files """
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
         rec_file = folder + "/rec.pdb"
-        # out_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        final_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        if not force and os.path.exists(final_file):
+            continue
         # for some godforsaken reason there's a memory error if I try to 
         # output the final file directly. But a tmp file and copying works
         out_file = f"rec_{i}.mae"
-        if os.path.exists(out_file): continue
+        
         # os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-        cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file}"
+        cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file} -NOJOBID"
         print("Running " + cmd)
         subprocess.run(cmd, shell=True, check=True)
 
-def finalize_rec_prep(cfg, out_folder):
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-        rec_file = folder + "/rec.pdb"
-        old_file = f"rec_{i}.mae"
-        new_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-        os.rename(old_file, new_file)
+        os.rename(out_file, final_file)
 
 def make_grids(cfg, out_folder):
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
@@ -227,11 +224,9 @@ if __name__ == "__main__":
     # if not os.path.exists("baseline_data"):
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
-    prep_ligs(cfg, out_folder)
-    prep_recs(cfg, out_folder)
-    finalize_rec_prep(cfg, out_folder)
-    make_grids(cfg, out_folder)
+    # prep_ligs(cfg, out_folder)
+    # prep_recs(cfg, out_folder, force=True)
+    # make_grids(cfg, out_folder)
     # dock_all(cfg, out_folder)
-    # dock_all_slurm(cfg, out_folder)
-    # glide_to_sdf(cfg, out_folder)
-            
+    dock_all_slurm(cfg, out_folder)
+    # glide_to_sdf(cfg, out_folder) 
