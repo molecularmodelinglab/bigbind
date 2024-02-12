@@ -170,7 +170,7 @@ def run_gnina(cfg, args):
         print_exc()
         return None
 
-run_all_gnina = iter_task(600, 5*600*24, n_cpu=1, mem=128, force=True)(run_gnina)
+run_all_gnina = iter_task(600, 10*600*24, n_cpu=1, mem=128, force=True)(run_gnina)
 
 def make_vina_gnina_workflow(cfg):
 
