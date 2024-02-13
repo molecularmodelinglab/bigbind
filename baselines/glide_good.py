@@ -177,11 +177,12 @@ DOCKING_METHOD {method}
 MAX_LIGANDS = 1000
 def clean_all_glide_results(cfg):
     for split, pocket in get_all_bayesbind_splits_and_pockets(cfg):
-        smi_file = get_bayesbind_dir(cfg) + f"/{split}/{pocket}/random.smi"
-        result_folder = get_baseline_dir(cfg, "glide", split, pocket) + "/random_results"
-        docked_mae = result_folder + "/dock_random_pv.maegz"
-        out_folder = result_folder
-        clean_glide_outputs(smi_file, docked_mae, out_folder, MAX_LIGANDS)
+        for prefix in ["actives", "random"]:
+            smi_file = get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{prefix}.smi"
+            result_folder = get_baseline_dir(cfg, "glide", split, pocket) + f"/{prefix}_results"
+            docked_mae = result_folder + f"/dock_{prefix}_pv.maegz"
+            out_folder = result_folder
+            clean_glide_outputs(smi_file, docked_mae, out_folder, MAX_LIGANDS)
 
 def convert_glide_min_recs(cfg):
     split = "val"
@@ -340,8 +341,8 @@ def make_glide_good_struct(cfg):
 
 if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
-    # clean_all_glide_results(cfg)
-    make_glide_good_struct(cfg)
+    clean_all_glide_results(cfg)
+    # make_glide_good_struct(cfg)
     # convert_glide_min_ligs(cfg)
     # minimize_all_glide_structs(cfg)
     # convert_glide_min_recs(cfg)

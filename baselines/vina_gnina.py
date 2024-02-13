@@ -9,14 +9,16 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdMolTransforms
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
-from meeko import MoleculePreparation
-from tqdm import tqdm
+from meeko import MoleculePreparation, PDBQTMolecule
+from tqdm import tqdm, trange
+from rdkit.Chem import PandasTools
+from rdkit import RDLogger
+
+RDLogger.DisableLog('rdApp.*')  
 
 from utils.cfg_utils import get_baseline_dir, get_baseline_struct_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_output_dir
 from utils.task import iter_task, simple_task, task
 from utils.workflow import Workflow
-
-MAX_LIGANDS_PER_REC = 1000
 
 def get_cache_dir(cfg):
     ret = os.path.join(cfg.host.work_dir, cfg.run_name, "local", "vina_cache")
@@ -134,7 +136,7 @@ def prepare_docking_inputs(cfg, rec_pdbqts, program):
         for prefix in [ "actives", "random" ]:
             csv = prefix + ".csv"
             df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{csv}")
-            df = df.iloc[:MAX_LIGANDS_PER_REC]
+            df = df.iloc[:cfg.baseline_max_ligands]
             for i, row in df.iterrows():
                 out_file = get_baseline_dir(cfg, program, split, pocket) + f"/{prefix}_{i}.{ext}"
                 ret.append((split, pocket, row, out_file))
@@ -183,6 +185,77 @@ def make_vina_gnina_workflow(cfg):
 
     return Workflow(cfg, gnina_outputs)
 
+def get_gnina_preds(cfg, split, pocket, prefix):
+    """ Returns a numpy array of the gnina
+    predictions for a given split, pocket, and prefix
+    (either actives or random) """
+    scores = []
+    df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{prefix}.csv")
+    for i in range(len(df)):
+        if i >= cfg.baseline_max_ligands:
+            break
+        fname = get_baseline_dir(cfg, "gnina", split, pocket) + f"/{prefix}_{i}.sdf"
+        if os.path.exists(fname):
+            sd_df = PandasTools.LoadSDF(fname, strictParsing=False, molColName=None)
+            try:
+                scores.append(sd_df.CNNaffinity[0])
+            except AttributeError:
+                print(f"Error loading {fname}")
+                scores.append(-1000)
+        else:
+            scores.append(-1000)
+    return np.asarray(scores)
+
+def get_docked_scores_from_pdbqt(fname):
+    return PDBQTMolecule.from_file(fname)._pose_data["free_energies"]
+
+def get_vina_preds(cfg, split, pocket, prefix):
+    """ Returns a numpy array of the vina
+    predictions for a given split, pocket, and prefix
+    (either actives or random) """
+    scores = []
+    df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{prefix}.csv")
+    for i in range(len(df)):
+        if i >= cfg.baseline_max_ligands:
+            break
+        fname = get_baseline_dir(cfg, "vina", split, pocket) + f"/{prefix}_{i}.pdbqt"
+        if os.path.exists(fname):
+            cur_scores = get_docked_scores_from_pdbqt(fname)
+            scores.append(-cur_scores[0])
+        else:
+            scores.append(-1000)
+    return np.asarray(scores)
+
+def collate_all_results(cfg):
+    """ Collates the results of gnina + vina, writing all the actives 
+    results for a given pocket to actives_results/results.csv 
+    and the same for random  """
+    
+    for program in [ "vina", "gnina" ]:
+        for split, pocket in tqdm(get_all_bayesbind_splits_and_pockets(cfg)):
+            for prefix in [ "actives", "random" ]:
+                csv = prefix + ".csv"
+                df = pd.read_csv(get_bayesbind_dir(cfg) + f"/{split}/{pocket}/{csv}")
+                new_rows = []
+                for i, row in df.iterrows():
+                    if i >= cfg.baseline_max_ligands:
+                        break
+                    docked_fname = f"/{prefix}_{i}.sdf"
+                    new_rows.append({
+                        "smiles": row.lig_smiles,
+                        "filaname": docked_fname,
+                    })
+                out_df = pd.DataFrame(new_rows)
+                if program == "vina":
+                    out_df["score"] = get_vina_preds(cfg, split, pocket, prefix)
+                else:
+                    out_df["score"] = get_gnina_preds(cfg, split, pocket, prefix)
+                
+                out_folder = get_baseline_dir(cfg, program, split, pocket) + f"/{prefix}_results"
+                os.makedirs(out_folder, exist_ok=True)
+
+                out_df.to_csv(out_folder + "/results.csv", index=False)
+
 # def postproc_gnina(cfg):
 #     """ Re-indexes gnina predictions according to valid_indexes """
 #     for split, pocket in tqdm(get_all_bayesbind_splits_and_pockets(cfg)):
@@ -228,4 +301,5 @@ def run_gnina_on_bayesbind_struct(cfg):
 
 if __name__ == "__main__":
     cfg = get_config("local")
-    run_gnina_on_bayesbind_struct(cfg)
+    # run_gnina_on_bayesbind_struct(cfg)
+    collate_all_results(cfg)

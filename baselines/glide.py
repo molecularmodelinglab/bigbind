@@ -10,7 +10,6 @@ from tqdm import tqdm
 from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir
 
 HOST = "\"general:6\""
-MAX_LIGANDS_PER_REC = 1000
 
 def prep_ligs(cfg, out_folder):
     """ Run ligprep on all the actives and random smi files"""
@@ -21,12 +20,12 @@ def prep_ligs(cfg, out_folder):
             if os.path.exists(out_file): continue
             os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
             
-            # create new smi file with only the first MAX_LIGANDS_PER_REC ligands
-            out_smi_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + f"_{MAX_LIGANDS_PER_REC}.smi"
+            # create new smi file with only the first cfg.baseline_max_ligands ligands
+            out_smi_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + f"_{cfg.baseline_max_ligands}.smi"
             with open(smi_file, "r") as f:
                 lines = f.readlines()
                 with open(out_smi_file, "w") as f2:
-                    f2.writelines(lines[:MAX_LIGANDS_PER_REC])
+                    f2.writelines(lines[:cfg.baseline_max_ligands])
 
             
             # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
