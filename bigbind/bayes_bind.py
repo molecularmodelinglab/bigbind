@@ -8,6 +8,8 @@ import os
 import shutil
 import random
 from rdkit import Chem
+from pdbfixer import PDBFixer
+from openmm.app import PDBFile
 
 from tqdm import tqdm
 from baselines.vina_gnina import get_all_bayesbind_splits_and_pockets
@@ -33,6 +35,29 @@ def load_smiles(smi_fname):
             ret.append(line.strip())
     return ret
 
+def fix_pdb_file(in_file, out_file):
+    """ Uses PDBFixer to add Hs and residues to a PDB file. We additionally ensure
+    that no C- or N- terminal residues are added (these create annoying dangling ends) """
+
+    fixer = PDBFixer(filename=in_file)
+
+    last_idx = len(list(fixer.topology.residues()))
+    fixer.findMissingResidues()
+
+    # we don't want long dangling ends
+    if (0, 0) in fixer.missingResidues:
+        del fixer.missingResidues[(0, 0)]
+    if (0, last_idx) in fixer.missingResidues:
+        del fixer.missingResidues[(0, last_idx)]
+
+    fixer.findNonstandardResidues()
+    fixer.replaceNonstandardResidues()
+    fixer.removeHeterogens(False)
+    fixer.findMissingAtoms()
+    fixer.addMissingAtoms()
+    fixer.addMissingHydrogens(7.0)
+    PDBFile.writeFile(fixer.topology, fixer.positions, open(out_file, 'w'))
+
 def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random):
     folder = get_bayesbind_dir(cfg) + f"/{split}/{pocket}"
     os.makedirs(folder, exist_ok=True)
@@ -49,9 +74,10 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
     add_seq_to_pdb(rec_file, rec_pdb, folder + "/rec.pdb")
     
     # add Hs and residues for MD-ready rec files
-    pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues --keep-heterogens=none"
-    print(f"Running: {pdb_fix_cmd}")
-    subprocess.run(pdb_fix_cmd, shell=True, check=True)
+    fix_pdb_file(folder + "/rec.pdb", folder + "/rec_hs.pdb")
+    # pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues --keep-heterogens=none"
+    # print(f"Running: {pdb_fix_cmd}")
+    # subprocess.run(pdb_fix_cmd, shell=True, check=True)
 
     # poc_df.to_csv(folder + "/activities.csv", index=False)
 
@@ -155,7 +181,7 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
 
 
 # force this!
-@task(force=True)
+@task(force=False)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
     # shutil.rmtree(get_bayesbind_dir(cfg))
 
@@ -252,7 +278,7 @@ def make_all_bayesbind_struct(cfg, saved_bayesbind, cluster_cutoff=8, act_cutoff
             make_bayesbind_struct_dir(cfg, split, pocket, df)
 
 if __name__ == "__main__":
-    cfg = get_config("local")
+    cfg = get_config(sys.argv[1])
 
     saved_bayesbind_struct = make_all_bayesbind_struct(None)
 

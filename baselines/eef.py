@@ -72,25 +72,28 @@ def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_frac):
 
     return ef_hat, low, high, pval
 
-def calc_best_eef(preds, true_act, act_cutoff):
+def calc_best_eef(act_preds, rand_preds, true_act, act_cutoff, max_uncertainty_ratio=None):
     """ Compute the best possible EEF from the predictions.
     Returns a tuple (EEF, low, high, fraction selected, N (1/fraction selection))
     This returns the EEF with the highest lower bound. """
 
     cur_best = None
     seen_fracs = set()
-    for act in preds["actives"]:
-        cur_frac = float((preds["random"] >= act).sum()/len(preds["random"]))
+    for act in act_preds:
+        cur_frac = float((rand_preds >= act).sum()/len(rand_preds))
         if cur_frac in seen_fracs:
             continue
         if cur_frac == 0:
-            cur_frac = 1/len(preds["random"])
+            cur_frac = 1/len(rand_preds)
 
         seen_fracs.add(cur_frac)
-        cur_N = int(round(1/cur_frac))
-        eef, low, high, pval = calc_eef(preds["actives"], preds["random"], true_act, act_cutoff, select_frac=cur_frac)
-        # if cur_best is None or eef > cur_best[0]:
-        #     cur_best = (eef, low, high, pval, cur_frac, cur_N)
+        eef, low, high, pval = calc_eef(act_preds, rand_preds, true_act, act_cutoff, select_frac=cur_frac)
+
+        if eef > 0 and cur_best is not None:
+            uncertainty_ratio = (high - low)/eef
+            if max_uncertainty_ratio is not None and uncertainty_ratio > max_uncertainty_ratio:
+                continue
+
         if cur_best is None or low > cur_best[1]:
-            cur_best = (eef, low, high, pval, cur_frac, cur_N)
+            cur_best = (eef, low, high, pval, cur_frac)
     return cur_best
