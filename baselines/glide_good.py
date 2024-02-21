@@ -341,8 +341,8 @@ def make_glide_good_struct(cfg):
 
 if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
-    clean_all_glide_results(cfg)
-    # make_glide_good_struct(cfg)
+    # clean_all_glide_results(cfg)
+    make_glide_good_struct(cfg)
     # convert_glide_min_ligs(cfg)
     # minimize_all_glide_structs(cfg)
     # convert_glide_min_recs(cfg)

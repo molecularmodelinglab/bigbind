@@ -11,6 +11,7 @@ from rdkit.Chem import PandasTools
 import pandas as pd
 from baselines.evaluate import get_all_glide_scores_struct
 from baselines.vina_gnina import get_all_bayesbind_struct_splits_and_pockets
+from bigbind.bayes_bind import fix_pdb_file
 from bigbind.tanimoto_matrix import batch_tanimoto, get_morgan_fps, get_tanimoto_matrix_impl
 from utils.cfg_utils import get_baseline_dir, get_bayesbind_small_dir, get_bayesbind_struct_dir, get_config, get_output_dir
 from utils.workflow import Workflow
@@ -72,9 +73,10 @@ def make_bayesbind_small_dir(cfg, split, pocket, scores):
     # save all the chosen crysal rec files
     for rec_file in df.redock_rec_file:
         shutil.copy(bb_folder + f"/{rec_file}", out_folder + f"/{rec_file}")
-        pdb_fix_cmd = f"pdbfixer {out_folder}/{rec_file} --output {out_folder}/{rec_file.replace('.pdb', '_hs.pdb')} --add-atoms=all --add-residues --keep-heterogens=none"
-        print(f"Running: {pdb_fix_cmd}")
-        subprocess.run(pdb_fix_cmd, shell=True, check=True)
+        # pdb_fix_cmd = f"pdbfixer {out_folder}/{rec_file} --output {out_folder}/{rec_file.replace('.pdb', '_hs.pdb')} --add-atoms=all --add-residues --keep-heterogens=none"
+        # print(f"Running: {pdb_fix_cmd}")
+        # subprocess.run(pdb_fix_cmd, shell=True, check=True)
+        fix_pdb_file(out_folder + f"/{rec_file}", out_folder + f"/{rec_file.replace('.pdb', '_hs.pdb')}")
 
     # save indexes of actives
     np.savetxt(out_folder + "/actives_indexes.txt", df.index.values, fmt="%d")
@@ -92,6 +94,14 @@ def make_bayesbind_small_dir(cfg, split, pocket, scores):
     # protonate the actives properly!
     cmd = f"obabel -isd {act_noh_fname} -osd -O {act_fname} -p 7"
     subprocess.run(cmd, shell=True, check=True)
+
+    # copy all the lig files
+    for lig_file in df.lig_crystal_file:
+        noh_lig_file = lig_file.replace(".sdf", "_noh.sdf")
+        shutil.copy(get_output_dir(cfg) + f"/{pocket}/{lig_file}", out_folder + f"/{noh_lig_file}")
+        # protonate the ligands
+        cmd = f"obabel -isd {out_folder}/{noh_lig_file} -osd -O {out_folder}/{lig_file} -p 7"
+        subprocess.run(cmd, shell=True, check=True)
 
     rand_folder = get_baseline_dir(cfg, RAND_DOCK_METHOD, split, pocket) + "/random_results"
     rand_mols = []
