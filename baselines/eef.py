@@ -36,7 +36,7 @@ class CutoffExpDist:
 
 A_dist = CutoffExpDist(None, 3.5, 0.3, 0.05)
 
-def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_frac):
+def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_frac, ret_pval=False):
     """" Computes expected enrichment factor (EEF) at a particular percentage.
     :param act_preds: predictions for the "active" compounds
         (though we reduce this number according to act_cutoff)
@@ -66,20 +66,28 @@ def calc_eef(act_preds, rand_preds, activities, act_cutoff, select_frac):
     ef_hat = P_act/P_rand
 
     bounds = binomtest(K, N, P_rand, alternative='two-sided').proportion_ci(0.95, method='wilson')
-    pval = binomtest(K, N, P_rand, alternative='greater').pvalue
+    if ret_pval:
+        pval = binomtest(K, N, P_rand, alternative='greater').pvalue
+    else:
+        pval = None
     low = bounds.low/P_rand
     high = bounds.high/P_rand
 
     return ef_hat, low, high, pval
 
-def calc_best_eef(act_preds, rand_preds, true_act, act_cutoff, max_uncertainty_ratio=None):
+def calc_best_eef(act_preds, rand_preds, true_act, act_cutoff, max_uncertainty_ratio=None, ret_pval=False):
     """ Compute the best possible EEF from the predictions.
     Returns a tuple (EEF, low, high, fraction selected, N (1/fraction selection))
     This returns the EEF with the highest lower bound. """
 
     cur_best = None
     seen_fracs = set()
-    for act in act_preds:
+
+    # we don't need much precision here -- it takes a while
+    # to get through everything smh
+    cutoffs = np.unique(act_preds.astype(np.float16))
+
+    for act in cutoffs:
         cur_frac = float((rand_preds >= act).sum()/len(rand_preds))
         if cur_frac in seen_fracs:
             continue
@@ -87,7 +95,7 @@ def calc_best_eef(act_preds, rand_preds, true_act, act_cutoff, max_uncertainty_r
             cur_frac = 1/len(rand_preds)
 
         seen_fracs.add(cur_frac)
-        eef, low, high, pval = calc_eef(act_preds, rand_preds, true_act, act_cutoff, select_frac=cur_frac)
+        eef, low, high, pval = calc_eef(act_preds, rand_preds, true_act, act_cutoff, select_frac=cur_frac, ret_pval=ret_pval)
 
         if eef > 0 and cur_best is not None:
             uncertainty_ratio = (high - low)/eef
