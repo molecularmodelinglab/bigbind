@@ -1,6 +1,6 @@
 
 from collections import defaultdict
-from functools import lru_cache
+from functools import lru_cache, partial
 from glob import glob
 import os
 import random
@@ -12,7 +12,7 @@ import pandas as pd
 from tqdm import tqdm
 from yaml import warnings
 from baselines.efb import calc_best_efb, calc_efb
-from baselines.metrics import calc_ef, compute_bootstrap_metrics, roc_auc, to_str
+from baselines.metrics import calc_ef, compute_bootstrap_metrics, median_metric, roc_auc, to_str
 
 from utils.cfg_utils import get_config
 
@@ -20,7 +20,6 @@ def get_all_dude_targets(cfg):
     """ Returns a list of all the targets in the DUD-E dataset """
     return [ f.split("/")[-1] for f in glob(f"{cfg.host.dude_vs_folder}/*") ]
 
-@lru_cache
 def get_dude_df(cfg, target, summary_prefix):
     """ Loads the dude dataframe for a given target """
     default_file = f"{cfg.host.dude_vs_folder}/{target}/{summary_prefix}.summary"
@@ -113,16 +112,18 @@ def get_gnina_dude_ef_df(cfg):
 
     return df
 
+all_select_fracs = np.logspace(-1, -3, 15)
 def dude_ef_row(args):
-    target, model, active_scores, decoy_scores = args
-    select_fracs = np.logspace(-1, -3, 15)
+    target, key, prefix, model = args
+    active_scores, decoy_scores = get_dude_scores(cfg, target, key, prefix)
+
     metrics = {
         "EFB_max": calc_best_efb,
     }
-    for frac in select_fracs:
+    for frac in all_select_fracs:
         percent_str = to_str(frac*100, 3)
-        metrics[f"EF_{percent_str}%"] = lambda act_preds, rand_preds: calc_ef(act_preds, rand_preds, frac)
-        metrics[f"EFB_{percent_str}%"] = lambda act_preds, rand_preds: calc_efb(act_preds, rand_preds, frac)
+        metrics[f"EF_{percent_str}%"] = partial(calc_ef, select_frac=frac)
+        metrics[f"EFB_{percent_str}%"] = partial(calc_efb, select_frac=frac)
 
     row = {
         "target": target,
@@ -132,6 +133,16 @@ def dude_ef_row(args):
 
     return row
 
+all_models = {
+    "Vina": ("Vina", "newdefault"),
+    "Default (Affinity)": ("newdefault_CNNaffinity", "newdefault"),
+    "Default (Pose)": ("newdefault_CNNscore", "newdefault"),
+    "Vinardo": ("Vinardo", "vinardo"),
+    "General (Affinity)": ("general_default2018_CNNaffinity", "sdsorter"),
+    "General (Pose)": ("general_default2018_CNNscore", "sdsorter"),
+    "Dense (Affinity)": ("dense_CNNaffinity", "sdsorter"),
+    "Dense (Pose)": ("dense_CNNscore", "sdsorter"),
+}
 def get_all_dude_ef_df(cfg, force=False):
     """ Computes the EFs and EF(B)s at various cutoffs for all the models
     on all the targets """
@@ -140,16 +151,6 @@ def get_all_dude_ef_df(cfg, force=False):
     if not force and os.path.exists(out_filename):
         return pd.read_csv(out_filename)
 
-    models = {
-        "Vina": ("Vina", "newdefault"),
-        "Default (Affinity)": ("newdefault_CNNaffinity", "newdefault"),
-        "Default (Pose)": ("newdefault_CNNscore", "newdefault"),
-        "Vinardo": ("Vinardo", "vinardo"),
-        "General (Affinity)": ("general_default2018_CNNaffinity", "sdsorter"),
-        "General (Pose)": ("general_default2018_CNNscore", "sdsorter"),
-        "Dense (Affinity)": ("dense_CNNaffinity", "sdsorter"),
-        "Dense (Pose)": ("dense_CNNscore", "sdsorter"),
-    }
     targets = get_all_dude_targets(cfg)
 
     # select_fracs = np.logspace(-1, -3, 15)
@@ -157,10 +158,9 @@ def get_all_dude_ef_df(cfg, force=False):
 
     efb_rows = []
     args = []
-    for target in tqdm(targets):
-        for model, (key, prefix) in (models.items()):
-            active_scores, decoy_scores = get_dude_scores(cfg, target, key, prefix)
-            args.append((target, model, active_scores, decoy_scores))
+    for target in targets:
+        for model, (key, prefix) in (all_models.items()):
+            args.append((target, key, prefix, model))
 
     with Pool(8) as p:
         efb_rows = list(tqdm(p.imap(dude_ef_row, args), total=len(args)))
@@ -169,6 +169,49 @@ def get_all_dude_ef_df(cfg, force=False):
     efb_df = pd.DataFrame(efb_rows)
     efb_df.to_csv(out_filename, index=False)
     return efb_df
+
+def get_dude_median_row(args):
+    cfg, model = args
+    key, prefix = all_models[model]
+
+    cur_preds = []
+
+    for target in get_all_dude_targets(cfg):
+        active_scores, decoy_scores = get_dude_scores(cfg, target, key, prefix)
+        cur_preds.extend([active_scores, decoy_scores])
+
+    metrics = {
+        "EFB_max": calc_best_efb,
+        "EFB_1%": lambda act, rand: calc_efb(act, rand, 0.01),
+        "EF_1%": lambda act, rand: calc_ef(act, rand, 0.01),
+    }
+
+    median_metrics = {
+        metric: partial(median_metric, metrics[metric])
+        for metric in metrics
+    }
+
+    row = {"model": model}
+    row.update(compute_bootstrap_metrics(cur_preds, median_metrics, n_resamples=1000, method="percentile", batch=1))
+    
+    return row
+
+def get_dude_median_metric_df(cfg, force=False):
+    """ Gets the (bootstrapped) median values for AUC,
+    EFB_max, EFB_1%, and EFB_1% for each model over 
+    all the pockets """
+
+    out_filename = f"outputs/dude_median_metrics.csv"
+    
+    rows = []
+    args = [(cfg, model) for model in all_models]
+    with Pool(8) as p:
+        rows = list(tqdm(p.imap(get_dude_median_row, args), total=len(args)))
+
+    df = pd.DataFrame(rows)
+    df.to_csv(out_filename, index=False)
+
+    return df
 
 def plot_eef_vs_ef_fig(df):
     """ Plot a figure showing the relationship between the
@@ -275,28 +318,58 @@ def plot_efb_vs_frac_fig(ef_df):
         for j, ax in enumerate(row):
             target = random.choice(targets)
             model = random.choice(models)
-            cur_df = ef_df[(ef_df.target == target) & (ef_df.model == model) & ~ef_df.EFB_max]
-            melb = ef_df[(ef_df.target == target) & (ef_df.model == model) & ef_df.EFB_max].EFB_low.max()
+            cur_df = ef_df[(ef_df.target == target) & (ef_df.model == model)]
+            print(cur_df)
+            assert len(cur_df) == 1
+
+            chis = all_select_fracs
+            efs = []
+            ef_errs = []
+            efbs = []
+            efb_errs = []
+            for chi in chis:
+                percent_str = to_str(chi*100, 3)
+                efs.append(cur_df[f"EF_{percent_str}%"].values[0])
+                efbs.append(cur_df[f"EFB_{percent_str}%"].values[0])
+                print(chi, cur_df[f"EF_{percent_str}%"])
+
+                ef_errs.append([cur_df[f"EF_{percent_str}%"].values[0] - cur_df[f"EF_{percent_str}%_low"].values[0], cur_df[f"EF_{percent_str}%_high"].values[0] - cur_df[f"EF_{percent_str}%"].values[0]])
+                efb_errs.append([cur_df[f"EFB_{percent_str}%"].values[0] - cur_df[f"EFB_{percent_str}%_low"].values[0], cur_df[f"EFB_{percent_str}%_high"].values[0] - cur_df[f"EFB_{percent_str}%"].values[0]])
             
-            mask = np.array(cur_df.EFB > 0)
-            high_vals = np.array(cur_df.EFB_high)
-            max_upper = np.max(high_vals)
-            for k in range(len(high_vals)):
-                if high_vals[k] == max_upper and i < len(high_vals) - 1:
-                    mask[k+1:] = False
+            efb_errs = np.array(efb_errs).T
+            ef_errs = np.array(ef_errs).T
 
-            errs = np.array([cur_df.EFB[mask] - cur_df.EFB_low[mask], cur_df.EFB_high[mask] - cur_df.EFB[mask]])
+            ax.plot(chis, efbs, label="EF$^B$")
+            ax.plot(chis, efs, label="EF")
 
-            melb = cur_df.EFB_low.max()
-            ax.errorbar(cur_df.select_frac[mask], cur_df.EFB[mask], yerr=errs, ecolor='grey', label="EF$^B$")
-            ax.plot(cur_df.select_frac[mask], cur_df.EF[mask], label="EF")
-            ax.axhline(melb, color='red', linestyle='--', label="MELB")
             ax.set_xscale("log")
             ax.invert_xaxis()
-            if i == len(axes) - 1 and j == len(row)//2:
-                ax.set_xlabel("$\chi$")
-            if j == 0 and i == len(axes)//2:
-                ax.set_ylabel(f"Enrichment")
+
+            # ax.errorbar(chis, efbs, yerr=efb_errs, label="EF$^B$")
+            # ax.errorbar(chis, efs, yerr=ef_errs, label="EF")
+
+            # cur_df = ef_df[(ef_df.target == target) & (ef_df.model == model) & ~ef_df.EFB_max]
+            # # melb = ef_df[(ef_df.target == target) & (ef_df.model == model) & ef_df.EFB_max].EFB_low.max()
+            
+            # mask = np.array(cur_df.EFB > 0)
+            # high_vals = np.array(cur_df.EFB_high)
+            # max_upper = np.max(high_vals)
+            # for k in range(len(high_vals)):
+            #     if high_vals[k] == max_upper and i < len(high_vals) - 1:
+            #         mask[k+1:] = False
+
+            # errs = np.array([cur_df.EFB[mask] - cur_df.EFB_low[mask], cur_df.EFB_high[mask] - cur_df.EFB[mask]])
+
+            # # melb = cur_df.EFB_low.max()
+            # ax.errorbar(cur_df.select_frac[mask], cur_df.EFB[mask], yerr=errs, ecolor='grey', label="EF$^B$")
+            # ax.plot(cur_df.select_frac[mask], cur_df.EF[mask], label="EF")
+            # # ax.axhline(melb, color='red', linestyle='--', label="MELB")
+            # ax.set_xscale("log")
+            # ax.invert_xaxis()
+            # if i == len(axes) - 1 and j == len(row)//2:
+            #     ax.set_xlabel("$\chi$")
+            # if j == 0 and i == len(axes)//2:
+            #     ax.set_ylabel(f"Enrichment")
             # if j == len(row) - 1 and i == len(axes) - 1:
             # if i == 0 and j == 0:
             #     ax.legend(prop={"size": 8})
@@ -311,6 +384,7 @@ if __name__ == "__main__":
     # df = get_gnina_dude_ef_df(cfg)
     # plot_eef_vs_ef_fig(df)
     all_df = get_all_dude_ef_df(cfg, force=True)
+    # med_df = get_dude_median_metric_df(cfg, force=True)
     # tab_df = make_dude_ef_table(all_df)
     # print(tab_df.to_latex(index=False))
 

@@ -42,14 +42,14 @@ def get_pocket_metrics_df(args):
             }
             for frac in select_fracs:
                 percent_str = to_str(frac*100, 3)
-                metrics[f"EF_{percent_str}%"] = lambda act_preds, rand_preds: calc_ef(act_preds, rand_preds, frac)
-                metrics[f"EFB_{percent_str}%"] = lambda act_preds, rand_preds: calc_efb(act_preds, rand_preds, frac)
+                metrics[f"EF_{percent_str}%"] = partial(calc_ef, select_frac=frac)
+                metrics[f"EFB_{percent_str}%"] = partial(calc_efb, select_frac=frac)
             row = {
                 "split": poc_df.split[0],
                 "model": model,
                 "pocket": pocket,
             }
-            row.update(compute_bootstrap_metrics((act_preds, rand_preds), metrics, n_resamples=1000))
+            row.update(compute_bootstrap_metrics((act_preds, rand_preds), metrics, n_resamples=1000, method="percentile"))
             rows.append(row)
 
         return pd.DataFrame(rows)
@@ -69,7 +69,7 @@ def get_metric_df(results_df, force=False):
 
         args = list(zip(pockets, poc_dfs))
         with Pool(8) as p:
-            dfs = list(tqdm(p.imap(get_pocket_metrics_df, args)), total=len(args))
+            dfs = list(tqdm(p.imap(get_pocket_metrics_df, args), total=len(args)))
 
         df = pd.concat(dfs, ignore_index=True)
 
@@ -255,7 +255,7 @@ def plot_all_figs(metric_df):
         fig, ax = plot_efbs(cur_df, "max", only_low=low, logy=False)
         ax.set_title(f"Model performance on the BayesBind ML set")
         fig.tight_layout()
-        fig.savefig(f"outputs/eef_max_ml_low_{low}.pdf")
+        fig.savefig(f"outputs/efb_max_ml_low_{low}.pdf")
 
     full_non_ml_query = f"model not in @bb_ml_models"
     cur_df = metric_df.query(full_non_ml_query).reset_index(drop=True)
@@ -263,14 +263,14 @@ def plot_all_figs(metric_df):
         fig, ax = plot_efbs(cur_df, "max", only_low=low, logy=False)
         ax.set_title(f"Model performance on the BayesBind full set")
         fig.tight_layout()
-        fig.savefig(f"outputs/eef_max_full_non_ml_low_{low}.pdf")
+        fig.savefig(f"outputs/efb_max_full_non_ml_low_{low}.pdf")
 
     cur_df = metric_df
     for low in [True, False]:
         fig, ax = plot_efbs(cur_df, "max", only_low=low, logy=False)
         ax.set_title(f"Model performance on the BayesBind full set")
         fig.tight_layout()
-        fig.savefig(f"outputs/eef_max_full_full_low_{low}.pdf")
+        fig.savefig(f"outputs/efb_max_full_full_low_{low}.pdf")
 
 if __name__ == "__main__":
     results_df = pd.read_csv("outputs/baseline_results.csv")
