@@ -77,6 +77,10 @@ def get_dude_scores(cfg, target, model, summary_prefix):
     assert len(active_scores) > 0
     assert len(decoy_scores) > 0
 
+    # set NaNs to low score
+    active_scores[np.isnan(active_scores)] = -1000
+    decoy_scores[np.isnan(decoy_scores)] = -1000
+
     return active_scores, decoy_scores
 
 
@@ -93,7 +97,6 @@ def get_gnina_dude_ef_df(cfg):
     rows = []
     for target in tqdm(targets):
         active_scores, decoy_scores = get_dude_scores(cfg, target, model, "newdefault")
-        fake_activities = np.ones(len(active_scores))
 
         for frac in [0.1, 0.01, 0.001, 0.0001]:
             EF = calc_ef(active_scores, decoy_scores, frac)
@@ -176,7 +179,7 @@ def get_dude_median_row(args):
 
     cur_preds = []
 
-    for target in get_all_dude_targets(cfg):
+    for target in tqdm(get_all_dude_targets(cfg)):
         active_scores, decoy_scores = get_dude_scores(cfg, target, key, prefix)
         cur_preds.extend([active_scores, decoy_scores])
 
@@ -184,6 +187,8 @@ def get_dude_median_row(args):
         "EFB_max": calc_best_efb,
         "EFB_1%": lambda act, rand: calc_efb(act, rand, 0.01),
         "EF_1%": lambda act, rand: calc_ef(act, rand, 0.01),
+        "EFB_0.1%": lambda act, rand: calc_efb(act, rand, 0.001),
+        "EF_0.1%": lambda act, rand: calc_ef(act, rand, 0.001),
     }
 
     median_metrics = {
@@ -202,6 +207,8 @@ def get_dude_median_metric_df(cfg, force=False):
     all the pockets """
 
     out_filename = f"outputs/dude_median_metrics.csv"
+    if not force and os.path.exists(out_filename):
+        return pd.read_csv(out_filename)
     
     rows = []
     args = [(cfg, model) for model in all_models]
@@ -242,11 +249,11 @@ def plot_eef_vs_ef_fig(df):
     fig.subplots_adjust(top=0.9)
     fig.savefig("outputs/gnina_dude_eef_vs_ef.pdf")
     
-def make_dude_ef_table(df, sigfigs=2):
+def make_dude_ef_table(med_df, sigfigs=2):
     """ Makes a table of the median EF and EFB for each model at various
     selection fractions. This prints out the LaTeX code for the table """
     
-    tab_dict = defaultdict(dict)
+    rows = []
 
     model_order = [
         "Vina",
@@ -260,40 +267,22 @@ def make_dude_ef_table(df, sigfigs=2):
     ]
 
     for model in model_order:
-        for select_frac in [0.01, 0.001]:
-            model_df = df.query(f"model == '{model}' and select_frac == {select_frac}").reset_index(drop=True)
+        row = {
+            "Model": model,
+        }
+        for metric in ["EF_1%", "EFB_1%", "EF_0.1%", "EFB_0.1%", "EFB_max"]:
+            val = med_df[med_df.model == model][metric].values[0]
+            low = med_df[med_df.model == model][f"{metric}_low"].values[0]
+            high = med_df[med_df.model == model][f"{metric}_high"].values[0]
+            row[metric] = f"{to_str(val, sigfigs)} [{to_str(low, sigfigs)}, {to_str(high, sigfigs)}]"
 
-            efbs = model_df.EFB.sort_values()
-            med_idx = efbs.index[len(efbs) // 2]
-            row = model_df.loc[med_idx]
-            med_efb = f"{to_str(row.EFB, sigfigs)} [{to_str(row.EFB_low, sigfigs)}, {to_str(row.EFB_high, sigfigs)}]"
-            med_ef = model_df.EF.median()
+        rows.append(row)
 
-            percent = select_frac * 100
-            if int(percent) == percent:
-                percent = int(percent)
-
-            tab_dict[model].update({
-                f"$\\text{{EF}}_{{{percent}\%}}$": f"{to_str(med_ef, sigfigs)}",
-                f"$\\text{{EF}}^B_{{{percent}\%}}$": med_efb,
-            })
-        melb_df = df.query(f"model == '{model}' and EFB_max == True").reset_index(drop=True)
-        melb = melb_df.EFB_low.median()
-        tab_dict[model].update({
-            "MELB": to_str(melb, sigfigs),
-        })
-
-
-
-    tab_rows = []
-    for key, val in tab_dict.items():
-        tab_rows.append({"Model": key, **val})
-
-    tab_df = pd.DataFrame(tab_rows)
+    tab_df = pd.DataFrame(rows)
 
     return tab_df
 
-def get_mean_deocys_per_active(cfg):
+def get_mean_decoys_per_active(cfg):
     """ Returns the mean number of decoys per active
     for all the DUD-E targets"""
     targets = get_all_dude_targets(cfg)
@@ -319,7 +308,7 @@ def plot_efb_vs_frac_fig(ef_df):
             target = random.choice(targets)
             model = random.choice(models)
             cur_df = ef_df[(ef_df.target == target) & (ef_df.model == model)]
-            print(cur_df)
+            # print(cur_df)
             assert len(cur_df) == 1
 
             chis = all_select_fracs
@@ -331,7 +320,6 @@ def plot_efb_vs_frac_fig(ef_df):
                 percent_str = to_str(chi*100, 3)
                 efs.append(cur_df[f"EF_{percent_str}%"].values[0])
                 efbs.append(cur_df[f"EFB_{percent_str}%"].values[0])
-                print(chi, cur_df[f"EF_{percent_str}%"])
 
                 ef_errs.append([cur_df[f"EF_{percent_str}%"].values[0] - cur_df[f"EF_{percent_str}%_low"].values[0], cur_df[f"EF_{percent_str}%_high"].values[0] - cur_df[f"EF_{percent_str}%"].values[0]])
                 efb_errs.append([cur_df[f"EFB_{percent_str}%"].values[0] - cur_df[f"EFB_{percent_str}%_low"].values[0], cur_df[f"EFB_{percent_str}%_high"].values[0] - cur_df[f"EFB_{percent_str}%"].values[0]])
@@ -339,54 +327,38 @@ def plot_efb_vs_frac_fig(ef_df):
             efb_errs = np.array(efb_errs).T
             ef_errs = np.array(ef_errs).T
 
-            ax.plot(chis, efbs, label="EF$^B$")
-            ax.plot(chis, efs, label="EF")
+            # ax.plot(chis, efbs, label="EF$^B$")
+            # ax.plot(chis, efs, label="EF")
+
+            ax.errorbar(chis, efbs, yerr=efb_errs, label="EF$^B$")
+            ax.errorbar(chis, efs, yerr=ef_errs, label="EF")
+
 
             ax.set_xscale("log")
             ax.invert_xaxis()
 
-            # ax.errorbar(chis, efbs, yerr=efb_errs, label="EF$^B$")
-            # ax.errorbar(chis, efs, yerr=ef_errs, label="EF")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
 
-            # cur_df = ef_df[(ef_df.target == target) & (ef_df.model == model) & ~ef_df.EFB_max]
-            # # melb = ef_df[(ef_df.target == target) & (ef_df.model == model) & ef_df.EFB_max].EFB_low.max()
-            
-            # mask = np.array(cur_df.EFB > 0)
-            # high_vals = np.array(cur_df.EFB_high)
-            # max_upper = np.max(high_vals)
-            # for k in range(len(high_vals)):
-            #     if high_vals[k] == max_upper and i < len(high_vals) - 1:
-            #         mask[k+1:] = False
+            if i == len(axes) - 1 and j == len(row)//2:
+                ax.set_xlabel("$\chi$")
+            if j == 0 and i == len(axes)//2:
+                ax.set_ylabel(f"Enrichment")
 
-            # errs = np.array([cur_df.EFB[mask] - cur_df.EFB_low[mask], cur_df.EFB_high[mask] - cur_df.EFB[mask]])
-
-            # # melb = cur_df.EFB_low.max()
-            # ax.errorbar(cur_df.select_frac[mask], cur_df.EFB[mask], yerr=errs, ecolor='grey', label="EF$^B$")
-            # ax.plot(cur_df.select_frac[mask], cur_df.EF[mask], label="EF")
-            # # ax.axhline(melb, color='red', linestyle='--', label="MELB")
-            # ax.set_xscale("log")
-            # ax.invert_xaxis()
-            # if i == len(axes) - 1 and j == len(row)//2:
-            #     ax.set_xlabel("$\chi$")
-            # if j == 0 and i == len(axes)//2:
-            #     ax.set_ylabel(f"Enrichment")
-            # if j == len(row) - 1 and i == len(axes) - 1:
-            # if i == 0 and j == 0:
-            #     ax.legend(prop={"size": 8})
         # decrease padding around the y and x labels
     fig.suptitle("EF$^B_\chi$ versus EF$_\chi$ for various $\chi$")
     fig.tight_layout()
+    axes[0][0].legend(loc='upper left')
 
     return fig
 
 if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
-    # df = get_gnina_dude_ef_df(cfg)
-    # plot_eef_vs_ef_fig(df)
-    all_df = get_all_dude_ef_df(cfg, force=True)
-    # med_df = get_dude_median_metric_df(cfg, force=True)
-    # tab_df = make_dude_ef_table(all_df)
-    # print(tab_df.to_latex(index=False))
+    med_df = get_dude_median_metric_df(cfg, force=False)
+    all_df = get_all_dude_ef_df(cfg, force=False)
 
-    # fig = plot_efb_vs_frac_fig(all_df)
-    # fig.savefig("outputs/efb_chi.pdf")
+    tab_df = make_dude_ef_table(med_df)
+    print(tab_df.to_latex(index=False))
+
+    fig = plot_efb_vs_frac_fig(all_df)
+    fig.savefig("outputs/efb_chi.pdf")
