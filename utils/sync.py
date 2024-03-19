@@ -3,24 +3,28 @@ import os
 import subprocess
 from utils.cfg_utils import get_config
 
-def sync_to(cfg):
-    cmd = f"gsutil -m rsync -r gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global {cfg.host.work_dir}/{cfg.run_name}/global"
+def sync_to(cfg, dir):
+    cmd = f"gsutil -m rsync -r gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global{dir} {cfg.host.work_dir}/{cfg.run_name}/global{dir}"
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 
-def sync_from(cfg):
-    cmd = f"gsutil -m rsync -r {cfg.host.work_dir}/{cfg.run_name}/global gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global"
+def sync_from(cfg, dir):
+    cmd = f"gsutil -m rsync -r {cfg.host.work_dir}/{cfg.run_name}/global{dir} gs://{cfg.gcloud.bucket}/{cfg.gcloud.work_dir}/{cfg.run_name}/global{dir}"
     print(f"Running {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 
 if __name__ == "__main__":
     verb = sys.argv[1]
     host = sys.argv[2]
+    if len(sys.argv) > 3:
+        dir = "/" + sys.argv[3]
+    else:
+        dir = ""
     cfg = get_config(host)
     if verb == "to":
-        sync_to(cfg)
+        sync_to(cfg, dir)
     elif verb == "from":
-        sync_from(cfg)
+        sync_from(cfg, dir)
     else:
         raise Exception("verb must be 'to' or 'from'")
 # def get_rsync_dir(cfg):

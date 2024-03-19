@@ -21,7 +21,7 @@ def get_morgan_fps(cfg, df, radius=3, bits=2048):
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, useChirality=True, radius=radius, nBits=bits)
         fps.append(np.array(fp, dtype=bool))
     fps = np.asarray(fps)
-
+    return fps
 
 def get_fp(smi, radius=4, bits=2048):
     mol = Chem.MolFromSmiles(smi)
@@ -33,6 +33,15 @@ MORGAN_FP_CPUS = 32
 @task(max_runtime=1, n_cpu=MORGAN_FP_CPUS, num_outputs=2, mem=32)
 def get_morgan_fps_parallel(cfg, df):
     smi_list = list(df.canonical_smiles.unique())
+    fps = []
+    with Pool(MORGAN_FP_CPUS) as p:
+        fps = list(tqdm(p.imap(get_fp, smi_list), total=len(smi_list)))
+    fps = np.asarray(fps)
+    return smi_list, fps
+
+@task(max_runtime=1, n_cpu=MORGAN_FP_CPUS, num_outputs=2, mem=32)
+def get_morgan_fps_parallel_struct(cfg, df):
+    smi_list = list(df.lig_smiles.unique())
     fps = []
     with Pool(MORGAN_FP_CPUS) as p:
         fps = list(tqdm(p.imap(get_fp, smi_list), total=len(smi_list)))
@@ -69,8 +78,7 @@ def batch_tanimoto_faster(fp_shape, fp_shm_name, fp_sum_shape, fp_sum_shm_name, 
     return ssim
 
 TANIMOTO_CPUS = 16
-@task(max_runtime=24, n_cpu=TANIMOTO_CPUS, mem=32)
-def get_tanimoto_matrix(cfg, fps):
+def get_tanimoto_matrix_impl(fps):
     try:
         fp_sum = fps.sum(-1)
 
@@ -91,6 +99,15 @@ def get_tanimoto_matrix(cfg, fps):
         fp_shm.unlink()
         fp_sum_shm.close()
         fp_sum_shm.unlink()
+
+@task(max_runtime=24, n_cpu=TANIMOTO_CPUS, mem=32)
+def get_tanimoto_matrix(cfg, fps):
+    return get_tanimoto_matrix_impl(fps)
+
+@task(max_runtime=24, n_cpu=TANIMOTO_CPUS, mem=32)
+def get_tanimoto_matrix_struct(cfg, fps):
+    return get_tanimoto_matrix_impl(fps)
+
 
 @task()
 def get_full_tanimoto_matrix(cfg, activities, smi_list, lig_sim_mat):

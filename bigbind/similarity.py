@@ -183,6 +183,14 @@ def get_pocket_indexes(cfg, activities):
         poc_indexes[p1] = np.array(activities.index[activities.pocket == p1], dtype=int)
     return poc_indexes
 
+@task(max_runtime=0.2, force=False)
+def get_pocket_indexes_struct(cfg, activities):
+    """Returns a dictionary mapping pockets to the indexes of all
+    rows in the structures dataframe with the pocket"""
+    poc_indexes = {}
+    for p1 in tqdm(activities.pocket.unique()):
+        poc_indexes[p1] = np.array(activities.index[activities.pocket == p1], dtype=int)
+    return poc_indexes
 
 # force this!
 @task(max_runtime=0.2, force=False)

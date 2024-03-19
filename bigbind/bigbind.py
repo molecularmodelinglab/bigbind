@@ -18,9 +18,10 @@ import requests
 from traceback import print_exc
 from rdkit.Chem.rdShapeHelpers import ComputeConfBox, ComputeUnionBox
 import random
-from bigbind.bayes_bind import make_all_bayesbind
+from bigbind.bayes_bind import make_all_bayesbind, make_all_bayesbind_struct
+from bigbind.crossdocked_affinity import add_affinities_to_structures, add_canonical_smiles_to_structures, get_chembl_crossdocked_affinities
 from bigbind.knn import compare_probis_and_pocket_tm, get_optimal_tan_tm_coefs
-from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_lig_rec_edge_prob_ratios_probis, get_pocket_clusters, get_pocket_clusters_probis, get_pocket_clusters_with_tanimoto, get_pocket_clusters_with_tanimoto_probis, get_pocket_indexes, get_pocket_similarity, get_pocket_similarity_probis, plot_prob_ratios, plot_prob_ratios_probis
+from bigbind.similarity import LigSimilarity, get_lig_rec_edge_prob_ratios, get_lig_rec_edge_prob_ratios_probis, get_pocket_clusters, get_pocket_clusters_probis, get_pocket_clusters_with_tanimoto, get_pocket_clusters_with_tanimoto_probis, get_pocket_indexes, get_pocket_indexes_struct, get_pocket_similarity, get_pocket_similarity_probis, plot_prob_ratios, plot_prob_ratios_probis
 from bigbind.probis import convert_inter_results_to_json, convert_intra_results_to_json, create_all_probis_srfs, find_all_probis_distances, find_representative_rec, get_rep_recs
 
 from utils.cfg_utils import get_output_dir
@@ -28,7 +29,7 @@ from utils.workflow import Workflow
 from utils.task import file_task, simple_task, task, iter_task
 from utils.downloads import StaticDownloadTask
 from bigbind.pdb_to_mol import load_components_dict, mol_from_pdb
-from bigbind.tanimoto_matrix import get_full_tanimoto_matrix, get_morgan_fps_parallel, get_tanimoto_matrix
+from bigbind.tanimoto_matrix import get_full_tanimoto_matrix, get_morgan_fps_parallel, get_morgan_fps_parallel_struct, get_tanimoto_matrix, get_tanimoto_matrix_struct
 from bigbind.pocket_tm_score import get_all_pocket_tm_scores
 from bigbind.pdb_ligand import get_lig_url, save_pockets
 
@@ -1159,8 +1160,7 @@ def get_splits_probis(cfg, activities, clusters, lit_pcba_pockets, pocket_indexe
 
     return splits
 
-@task(max_runtime=2)
-def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
+def get_lig_cluster_impl(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
     """ Clusters all the ligands for a given pocket with tanimoto cutoff > 0.4
     Returns an array of cluster indexes for each ligand  in activities"""
     lig_sim = LigSimilarity(lig_smi, lig_sim_mat)
@@ -1184,6 +1184,14 @@ def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
 
     return ret_clusters
 
+@task(max_runtime=2)
+def get_lig_clusters(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
+    return get_lig_cluster_impl(cfg, activities, poc_indexes, lig_smi, lig_sim_mat)
+
+@task(max_runtime=2)
+def get_lig_clusters_struct(cfg, activities, poc_indexes, lig_smi, lig_sim_mat):
+    return get_lig_cluster_impl(cfg, activities, poc_indexes, lig_smi, lig_sim_mat)
+
 # force this!
 @task(max_runtime=0.1, force=False)
 def add_all_clusters_to_act(cfg, activities, lig_cluster_idxs, poc_indexes, poc_clusters):
@@ -1199,6 +1207,15 @@ def add_all_clusters_to_act(cfg, activities, lig_cluster_idxs, poc_indexes, poc_
     assert (rec_cluster_idxs >= 0).all()
 
     activities["rec_cluster"] = rec_cluster_idxs
+
+    return activities
+
+@task(max_runtime=0.1, force=False)
+def add_lig_clusters_to_struct(cfg, activities, lig_cluster_idxs, poc_indexes, poc_clusters):
+    """ smh so we didn't include the pockets that only exist in crossdocked (but not chembl)
+    so we don't annotate their clusters here """
+
+    activities["lig_cluster"] = lig_cluster_idxs
 
     return activities
 
@@ -1497,6 +1514,17 @@ def make_bigbind_workflow(cfg):
                                  pocket_sizes)
     
     split2act_df = save_clustered_activities(activities_no_pot, splits)
+
+    # postprocess the structures dataframe
+    struct_smi_list, struct_lig_fps = get_morgan_fps_parallel_struct(struct_df)
+    struct_sim_mat = get_tanimoto_matrix_struct(struct_lig_fps)
+    pocket_indexes_struct = get_pocket_indexes_struct(struct_df)
+    lig_cluster_idxs_struct = get_lig_clusters_struct(struct_df, pocket_indexes_struct, struct_smi_list, struct_sim_mat)
+    struct_df = add_lig_clusters_to_struct(struct_df, lig_cluster_idxs_struct, pocket_indexes_struct, poc_clusters)
+    struct_df = add_canonical_smiles_to_structures(struct_df)
+    chembl_pks = get_chembl_crossdocked_affinities(activities_no_pot)
+    struct_df = add_affinities_to_structures(struct_df, chembl_pks)
+
     saved_struct = save_clustered_structs(struct_df, splits)
 
     # SNA
@@ -1543,22 +1571,25 @@ def make_bigbind_workflow(cfg):
     # BayesBind!
 
     saved_bayesbind = make_all_bayesbind(split2act_df, lig_smi, lig_sim_mat, poc_clusters)
+    saved_bayesbind_struct = make_all_bayesbind_struct(saved_bayesbind)
 
     tan_tm_coefs = get_optimal_tan_tm_coefs(tan_cutoffs, tm_cutoffs, prob_ratios)
 
     return Workflow(
         cfg,
-        rf2pocketfile,
-        saved_act_unf,
-        plotted_prob_ratios,
-        plotted_prob_ratios_probis,
-        split2act_df,
-        split2sna_df,
-        saved_struct,
         saved_bayesbind,
-        plotted_prob_ratios_probis,
-        tm_vs_probis,
-        tan_tm_coefs,
+        # saved_bayesbind_struct,
+        # rf2pocketfile,
+        # saved_act_unf,
+        # plotted_prob_ratios,
+        # plotted_prob_ratios_probis,
+        # split2act_df,
+        # split2sna_df,
+        # saved_struct,
+        # saved_bayesbind,
+        # plotted_prob_ratios_probis,
+        # tm_vs_probis,
+        # tan_tm_coefs,
     )
 
 
@@ -1592,7 +1623,6 @@ if __name__ == "__main__":
     # for node in workflow.nodes:
     #     print(node)
 
-    workflow.prev_run_name = "v2_fixed"
     workflow.run()
 
     # cd_nodes = workflow.out_nodes # find_nodes("untar_crossdocked")

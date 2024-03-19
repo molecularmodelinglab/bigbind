@@ -5,7 +5,9 @@ import pandas as pd
 import os
 import subprocess
 
-from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_config, get_parent_baseline_dir
+from tqdm import tqdm
+
+from utils.cfg_utils import get_baseline_dir, get_bayesbind_dir, get_bayesbind_struct_dir, get_config, get_parent_baseline_dir
 
 HOST = "\"general:6\""
 
@@ -17,31 +19,38 @@ def prep_ligs(cfg, out_folder):
             out_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + ".mae"
             if os.path.exists(out_file): continue
             os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-            # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
-            cmd = f"ligprep -ismi {smi_file} -omae {out_file}"
-            print("Running " + cmd)
-            subprocess.run(cmd, shell=True)
+            
+            # create new smi file with only the first cfg.baseline_max_ligands ligands
+            out_smi_file = out_folder + "/" + "/".join(smi_file.split("/")[-3:]).split(".")[0] + f"_{cfg.baseline_max_ligands}.smi"
+            with open(smi_file, "r") as f:
+                lines = f.readlines()
+                with open(out_smi_file, "w") as f2:
+                    f2.writelines(lines[:cfg.baseline_max_ligands])
 
-def prep_recs(cfg, out_folder):
+            
+            # cmd = f"ligprep -ismi {smi_file} -osd {out_file}"
+            cmd = f"ligprep -ismi {out_smi_file} -omae {out_file} -i 2"
+            print("Running " + cmd)
+            subprocess.run(cmd, shell=True, check=True)
+        # break
+
+def prep_recs(cfg, out_folder, force=False):
     """ Run prepwizard on all the rec files """
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
         rec_file = folder + "/rec.pdb"
-        # out_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        final_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+        if not force and os.path.exists(final_file):
+            continue
         # for some godforsaken reason there's a memory error if I try to 
         # output the final file directly. But a tmp file and copying works
         out_file = f"rec_{i}.mae"
-        if os.path.exists(out_file): continue
+        
         # os.makedirs("/".join(out_file.split("/")[:-1]), exist_ok=True)
-        cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file}"
+        cmd = f"$SCHRODINGER/utilities/prepwizard -fix {rec_file} {out_file} -NOJOBID"
         print("Running " + cmd)
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True)
 
-def finalize_rec_prep(cfg, out_folder):
-    for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
-        rec_file = folder + "/rec.pdb"
-        old_file = f"rec_{i}.mae"
-        new_file = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
-        os.rename(old_file, new_file)
+        os.rename(out_file, final_file)
 
 def make_grids(cfg, out_folder):
     for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
@@ -74,8 +83,8 @@ RECEP_FILE {rec_mae}
         
         cmd = f"glide {in_file}"
         print(f"Running {cmd}")
-        subprocess.run(cmd, shell=True)
-
+        subprocess.run(cmd, shell=True, check=True)
+        
 def dock_all(cfg, out_folder):
 
     abs_path = os.path.abspath(".")
@@ -118,7 +127,63 @@ LIGANDFILE {lig_file}
             os.chdir(output_folder)
             cmd = f"glide {in_file} -HOST {HOST} "
             print(f"Running {cmd} from {os.path.abspath('.')}")
-            subprocess.run(cmd, shell=True)
+            
+            # subprocess.run(cmd, shell=True, check=True)
+
+def dock_all_slurm(cfg, out_folder):
+
+    for prefix in ["actives", "random"]:
+        print(f"Writing to {os.path.abspath(f'glide_{prefix}.sh')}")
+        with open(f"glide_{prefix}.sh", "w") as f:
+            f.write(
+f"""#!/bin/bash
+#SBATCH --job-name=glide_{prefix}
+#SBATCH --time=10-00:00:00
+#SBATCH --cpus-per-task=15
+#SBATCH --mem=16G
+#SBATCH --output=dock_{prefix}.out
+#SBATCH --error=dock_{prefix}.err
+#SBATCH --partition=general
+
+module load schrodinger
+
+""")
+            for i, folder in enumerate(glob(get_bayesbind_dir(cfg) + f"/*/*")):
+
+                split, poc = folder.split("/")[-2:]
+
+                rec_file = folder + "/rec.pdb"
+                rec_mae = out_folder + "/" + "/".join(rec_file.split("/")[-3:]).split(".")[0] + ".mae"
+
+                cur_folder = "/".join(rec_mae.split("/")[:-1])
+                os.makedirs(cur_folder, exist_ok=True)
+
+                gridfile = cur_folder + "/grid.zip"
+
+                lig_file = cur_folder + "/" + prefix + ".mae"
+                in_file = cur_folder + "/dock_" + prefix + ".in"
+                output_folder = cur_folder + "/" + prefix + "_results"
+                os.makedirs(output_folder, exist_ok=True)
+
+                out_file = output_folder + f"/dock_{prefix}.csv"
+                if os.path.exists(out_file):
+                    print("Already ran glide for " + out_file)
+                    continue
+
+                # print(f"Writing docking params to {in_file}")
+                with open(in_file, "w") as in_f:
+                    in_f.write(
+f"""GRIDFILE {gridfile}
+LIGANDFILE {lig_file}
+"""
+                    )
+
+                cmd = f"glide {in_file}"
+                # print(f"Running {cmd} from {os.path.abspath('.')}")
+                f.write(f"cd {output_folder}\n")
+                f.write(cmd + "\n")
+                # subprocess.run(cmd, shell=True, check=True)
+            f.write("sleep 864000")
 
 def glide_to_sdf(cfg, out_folder):
 
@@ -159,9 +224,8 @@ if __name__ == "__main__":
     #     subprocess.run(f"ln -s {get_parent_baseline_dir(cfg)} baseline_data", shell=True, check=True)
 
     # prep_ligs(cfg, out_folder)
-    # prep_recs(cfg, out_folder)
-    # finalize_rec_prep(cfg, out_folder)
+    # prep_recs(cfg, out_folder, force=True)
     # make_grids(cfg, out_folder)
-    dock_all(cfg, out_folder)
-    # glide_to_sdf(cfg, out_folder)
-            
+    # dock_all(cfg, out_folder)
+    dock_all_slurm(cfg, out_folder)
+    # glide_to_sdf(cfg, out_folder) 

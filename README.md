@@ -1,6 +1,6 @@
 # The BigBind Dataset and BayesBind Benchmark
 
-Here lies the code for generating the BigBind Dataset and BayesBind virtual screening benchmark. Download the latest BigBind Dataset (V1.5) [here](https://storage.googleapis.com/bigbind_data/BigBindV1.5.tar.gz) and the latest BayesBind benchmark (V1.0) [here](https://storage.googleapis.com/bigbind_data/BayesBindV1.tar.gz).
+Here lies the code for generating the BigBind Dataset and BayesBind virtual screening benchmark. Download the latest BigBind Dataset (V1.5) [here](https://storage.googleapis.com/bigbind_data/BigBindV1.5.tar.gz) and the latest BayesBind benchmark (V1.5, full set) [here](https://storage.googleapis.com/bigbind_data/BayesBindV1.5.tar.gz). The BayesBind ML subset is [here](https://storage.googleapis.com/bigbind_data/BayesBindMLV1.5.tar.gz).
 
 ## BigBind contents
 
@@ -88,13 +88,11 @@ BayesBindV1
 
 For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have separate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
 
-**Warining!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below our cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EEFs. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
+**Warining!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below our cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EF<sup>B</sup>s. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
 
-A reference implementation of the EEF metric is in `baselines/eef.py`.
+A reference implementation of the EF<sup>B</sup> metric is in `baselines/efb.py`.
 
-If you are the first to achieve an EEF of at least 100 on 3 out of the 5 targets in the BayesBind test set, please [let me know](mailto:mixarcid@unc.edu)! I will personally come to wherever you are and buy every member of your group a drink.\*
-
-\*Provided you use the BigBind splits for training any ML models. I will also not travel to any active warzones.
+If you are the first to achieve a median EF<sup>B</sup><sub>max</sub> of > 50 on targets in the BayesBind test set (either ML or full), please [let me know](mailto:mixarcid@unc.edu)! I will personally buy drinks for every member of your group.
 
 ## Creating the dataset and benchmark
 
