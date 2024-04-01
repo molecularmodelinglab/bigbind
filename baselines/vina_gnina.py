@@ -243,7 +243,7 @@ def collate_all_results(cfg):
                     docked_fname = f"/{prefix}_{i}.sdf"
                     new_rows.append({
                         "smiles": row.lig_smiles,
-                        "filaname": docked_fname,
+                        "filename": docked_fname,
                     })
                 out_df = pd.DataFrame(new_rows)
                 if program == "vina":
