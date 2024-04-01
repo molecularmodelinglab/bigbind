@@ -30,7 +30,7 @@ The main meat of the dataset is in the `activities_*.csv` files. The non-SNA act
 | :---             |    :----                                                       |
 | lig_smiles       | SMILES string for the ligand                                   |
 | lig_file         | filename of UFF-optimized ligand sdf (in `chembl_structures/`) |
-| standard_type    | type of the activity from ChEMBL. E.g. IC50 of Ki/Kd           |
+| standard_type    | type of the activity from ChEMBL. E.g. IC50 or Ki/Kd           |
 | standard_relation | relation from ChEMBL (=, >, <). Always = in BigBind            |
 | standard_value   | raw value of the activity                                      |
 | standard_units   | units of the raw activity (nM, μM, etc). Will usually be nM but plz don't rely on that |
