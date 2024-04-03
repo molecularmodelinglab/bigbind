@@ -45,10 +45,23 @@ def fix_pdb_file(in_file, out_file):
     fixer.findMissingResidues()
 
     # we don't want long dangling ends
-    if (0, 0) in fixer.missingResidues:
-        del fixer.missingResidues[(0, 0)]
-    if (0, last_idx) in fixer.missingResidues:
-        del fixer.missingResidues[(0, last_idx)]
+    to_remove = []
+    for chain in fixer.topology.chains():
+
+        last_idx = len(list(chain.residues()))
+
+        # we don't want long dangling ends
+        if (chain.index, 0) in fixer.missingResidues:
+            del fixer.missingResidues[(chain.index, 0)]
+        if (chain.index, last_idx) in fixer.missingResidues:
+            del fixer.missingResidues[(chain.index, last_idx)]
+
+        # gdi sometimes we have some dangling residues on
+        # their own chain... remove!
+        if len(list(chain.residues())) < 2:
+            to_remove.append(chain.index)
+
+    fixer.removeChains(to_remove)
 
     fixer.findNonstandardResidues()
     fixer.replaceNonstandardResidues()
@@ -75,6 +88,7 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
     
     # add Hs and residues for MD-ready rec files
     fix_pdb_file(folder + "/rec.pdb", folder + "/rec_hs.pdb")
+    return
     # pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues --keep-heterogens=none"
     # print(f"Running: {pdb_fix_cmd}")
     # subprocess.run(pdb_fix_cmd, shell=True, check=True)
@@ -181,7 +195,7 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
 
 
 # force this!
-@task(force=False)
+@task(force=True)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
     # shutil.rmtree(get_bayesbind_dir(cfg))
 
@@ -281,6 +295,5 @@ if __name__ == "__main__":
     cfg = get_config(sys.argv[1])
 
     saved_bayesbind_struct = make_all_bayesbind_struct(None)
-
     workflow = Workflow(cfg, saved_bayesbind_struct)
     workflow.run()
