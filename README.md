@@ -88,12 +88,16 @@ BayesBindV1
 
 For each pocket in the benchmark, `rec.pdb` and `pocket.pdb` are the structures of the full receptor and just the pocket of the receptor, respectively. We have separate csv files for the random and active set (each csv file follows the same format as the BigBind dataset above; since each file is pocket-specific, a lot of the columns are the same value). For convenience, there are also smi files for both sets containing just the SMILES of each compound.
 
-**Warining!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below our cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EF<sup>B</sup>s. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
+**Warning!** The name "actives" can be misleading -- the csv and smi files contain molecules with *measured activities*, but these activities can be below our cutoff. In the BayesBind paper, we use a `pchembl` cutoff of 5 (though others can be chosen). This means all compounds with activities below the cutoff are discarded when computing EF<sup>B</sup>s. I'm aware this is pretty confusing nomenclature -- please let me know if you have better ideas.
 
 A reference implementation of the EF<sup>B</sup> metric is in `baselines/efb.py`.
 
 If you are the first to achieve a median EF<sup>B</sup><sub>max</sub> of > 50 on targets in the BayesBind test set (either ML or full), please [let me know](mailto:mixarcid@unc.edu)! I will personally buy drinks for every member of your group.
 
-## Creating the dataset and benchmark
+## Baseline results on BayesBind
+
+All scores (and docked poses, if applicable) for the baselines (GNINA, Vina, Glide, and BANANA) from the BayesBind paper can be downloaded [here](https://storage.googleapis.com/bigbind_data/BayesBindBaselinesV1.5.tar.gz).
+
+# Creating the dataset and benchmark
 
 Right now the code for creating the dataset is relatively brittle and specific to the machines we use. We are working on making this more usable. In the meantime, please reach out to [mixarcid@unc.edu](mailto:mixarcid@unc.edu) if you want to get this running yourself. I am happy to help!
