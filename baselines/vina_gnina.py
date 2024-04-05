@@ -194,7 +194,7 @@ def get_gnina_preds(cfg, split, pocket, prefix):
     for i in range(len(df)):
         if i >= cfg.baseline_max_ligands:
             break
-        fname = get_baseline_dir(cfg, "gnina", split, pocket) + f"/{prefix}_{i}.sdf"
+        fname = get_baseline_dir(cfg, "gnina", split, pocket) + f"/{prefix}_results/{i}.sdf"
         if os.path.exists(fname):
             sd_df = PandasTools.LoadSDF(fname, strictParsing=False, molColName=None)
             try:
@@ -218,7 +218,7 @@ def get_vina_preds(cfg, split, pocket, prefix):
     for i in range(len(df)):
         if i >= cfg.baseline_max_ligands:
             break
-        fname = get_baseline_dir(cfg, "vina", split, pocket) + f"/{prefix}_{i}.pdbqt"
+        fname = get_baseline_dir(cfg, "vina", split, pocket) + f"/{prefix}_results/{i}.pdbqt"
         if os.path.exists(fname):
             cur_scores = get_docked_scores_from_pdbqt(fname)
             scores.append(-cur_scores[0])
@@ -240,10 +240,27 @@ def collate_all_results(cfg):
                 for i, row in df.iterrows():
                     if i >= cfg.baseline_max_ligands:
                         break
-                    docked_fname = f"/{prefix}_{i}.sdf"
+                    postfix = "sdf" if program == "gnina" else "pdbqt"
+                    docked_fname = f"{get_baseline_dir(cfg, program, split, pocket)}/{prefix}_{i}.{postfix}"
+                    out_fname = f"{get_baseline_dir(cfg, program, split, pocket)}/{prefix}_results/{i}.sdf"
+                    filename = f"{i}.sdf"
+                    if not os.path.exists(out_fname):
+                        if os.path.exists(docked_fname):
+                            if postfix == "sdf":
+                                subprocess.run(f"mv {docked_fname} {out_fname}", shell=True, check=True)
+                            else:
+                                out_pdbqt = out_fname.replace(".sdf", ".pdbqt")
+                                subprocess.run(f"mv {docked_fname} {out_pdbqt}", shell=True, check=True)
+                                subprocess.run(f"obabel -ipdbqt {out_pdbqt} -osdf -O{out_fname} 2>/dev/null", shell=True, check=True)
+                        else:
+                            filename = ""
+                    else:
+                        if os.path.exists(docked_fname):
+                            os.remove(docked_fname)
+
                     new_rows.append({
                         "smiles": row.lig_smiles,
-                        "filename": docked_fname,
+                        "filename": filename,
                     })
                 out_df = pd.DataFrame(new_rows)
                 if program == "vina":
