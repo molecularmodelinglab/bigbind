@@ -135,7 +135,8 @@ def pocket_tm_score(cfg, protein1_pdb, protein2_pdb, poc1_res, poc2_res):
     p2_seq = reduce(lambda x, y: x+y, [p.get_sequence() for p in pp_list2])
 
     alignment = pairwise2.align.globalxx(p1_seq, p2_seq)
-    best_alignment = alignment[0]  # Get the best alignment
+    # an earlier version used the 0th (worse!) alignment SMH
+    best_alignment = alignment[-1]  # Get the best alignment
 
     # Extract the aligned sequences and alignment score
     aligned_seq1 = best_alignment[0]

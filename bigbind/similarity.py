@@ -123,17 +123,18 @@ class LigSimilarity:
 
     def get_nx_graph(self, smi_list, tan_cutoff=0.4):
         """Returns dict mapping smiles to neighbor smiles"""
-        assert tan_cutoff == 0.4
 
         idxs = np.array([self.smi2idx[smi] for smi in smi_list])
         mask = np.logical_and(
             np.in1d(self.tanimoto_mat.row, idxs), np.in1d(self.tanimoto_mat.col, idxs)
         )
+        mask = np.logical_and(mask, self.tanimoto_mat.data >= tan_cutoff)
+
         cur_row = self.tanimoto_mat.row[mask]
         cur_col = self.tanimoto_mat.col[mask]
 
         graph = nx.Graph()
-        for row, col in zip(cur_row, cur_col):
+        for row, col in zip(tqdm(cur_row), cur_col):
             graph.add_edge(self.smi_list[row], self.smi_list[col])
 
         return graph
