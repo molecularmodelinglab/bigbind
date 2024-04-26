@@ -88,7 +88,6 @@ def make_bayesbind_dir(cfg, lig_sim, split, both_df, poc_df, pocket, num_random)
     
     # add Hs and residues for MD-ready rec files
     fix_pdb_file(folder + "/rec.pdb", folder + "/rec_hs.pdb")
-    return
     # pdb_fix_cmd = f"pdbfixer {folder}/rec.pdb --output {folder}/rec_hs.pdb --add-atoms=all --add-residues --keep-heterogens=none"
     # print(f"Running: {pdb_fix_cmd}")
     # subprocess.run(pdb_fix_cmd, shell=True, check=True)
@@ -195,7 +194,7 @@ def make_bayesbind_split(cfg, lig_sim, split, df, both_df, poc_clusters, act_cut
 
 
 # force this!
-@task(force=True)
+@task(force=False)
 def make_all_bayesbind(cfg, saved_act, lig_smi, lig_sim_mat, poc_clusters):
     # shutil.rmtree(get_bayesbind_dir(cfg))
 
