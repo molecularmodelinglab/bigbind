@@ -147,7 +147,7 @@ def pocket_tm_score(cfg, protein1_pdb, protein2_pdb, poc1_res, poc2_res):
     s1 = 0
     s2 = 0
     for res1, res2 in zip(aligned_seq1, aligned_seq2):
-        if res1 != '-' and s2 != '-':
+        if res1 != '-' and res2 != '-':
             rec1_to_rec2[int(s1)] = int(s2)
             rec2_to_rec1[int(s2)] = int(s1)
         if res1 != '-' :
