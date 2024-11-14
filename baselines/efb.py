@@ -1,6 +1,4 @@
 import numpy as np
-import jax.numpy as jnp
-import jax
 
 def calc_efb(act_preds, rand_preds, select_frac, sorted=False):
     """" Computes EFB at a particular percentage.
