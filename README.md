@@ -1,6 +1,6 @@
 # The BigBind Dataset and BayesBind Benchmark
 
-Here lies the code for generating the [BigBind Dataset](https://pubs.acs.org/doi/abs/10.1021/acs.jcim.3c01211) and [BayesBind virtual screening benchmark](https://arxiv.org/abs/2403.10478v1). Download the latest BigBind Dataset, the latest BayesBind benchmark [here](https://zenodo.org/records/23102893).
+Here lies the code for generating the [BigBind Dataset](https://pubs.acs.org/doi/abs/10.1021/acs.jcim.3c01211) and [BayesBind virtual screening benchmark](https://arxiv.org/abs/2403.10478v1). Download the latest BigBind Dataset and the latest BayesBind benchmark [here](https://zenodo.org/records/23102893).
 
 ## BigBind contents
 
